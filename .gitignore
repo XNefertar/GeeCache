@@ -1,0 +1,41 @@
+# --- 1. 编译产物 (Build Output) ---
+# 忽略 Windows 下的可执行文件
+*.exe
+*.dll
+
+# 忽略测试生成的二进制文件
+*.test
+
+# 忽略代码覆盖率报告
+*.out
+coverage.txt
+
+# 忽略你自己编译生成的主程序文件名
+# (比如你的项目叫 GeeCache，编译出来可能叫 geecache 或 main)
+geecache
+main
+/bin/
+/dist/
+
+# --- 2. 依赖目录 (Dependencies) ---
+# 如果你使用 go modules (现在的标准)，通常不需要提交 vendor 目录
+vendor/
+
+# --- 3. 编辑器/IDE 配置 (IDE Config) ---
+# VS Code
+.vscode/
+
+# GoLand / IntelliJ
+.idea/
+*.iml
+
+# Vim 临时文件
+*.swp
+
+# --- 4. 操作系统文件 (OS) ---
+# Mac 系统产生的垃圾文件
+.DS_Store
+
+# --- 5. 敏感信息 (Secrets) ---
+# 环境变量文件 (绝对不要提交！)
+.env
