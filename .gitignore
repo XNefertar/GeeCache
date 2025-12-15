@@ -10,15 +10,13 @@
 *.out
 coverage.txt
 
-# 忽略你自己编译生成的主程序文件名
-# (比如你的项目叫 GeeCache，编译出来可能叫 geecache 或 main)
+# 忽略编译生成的主程序文件名
 geecache
 main
 /bin/
 /dist/
 
 # --- 2. 依赖目录 (Dependencies) ---
-# 如果你使用 go modules (现在的标准)，通常不需要提交 vendor 目录
 vendor/
 
 # --- 3. 编辑器/IDE 配置 (IDE Config) ---
@@ -37,5 +35,4 @@ vendor/
 .DS_Store
 
 # --- 5. 敏感信息 (Secrets) ---
-# 环境变量文件 (绝对不要提交！)
 .env
