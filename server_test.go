@@ -2,10 +2,9 @@ package geecache
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -18,7 +17,7 @@ var serverDB = map[string]string{
 }
 
 func createGroup() *Group {
-	return NewGroup("scores", 2<<10, GetterFunc(
+	return NewGroup("scores_server", 2<<10, GetterFunc(
 		func(key string) ([]byte, error) {
 			log.Println("[SlowDB] search key", key)
 			if v, ok := serverDB[key]; ok {
@@ -54,32 +53,10 @@ func startAPIServer(apiAddr string, gee *Group) {
 	log.Fatal(http.ListenAndServe(apiAddr[7:], nil))
 }
 
-// TestServer 这是一个特殊的测试函数，用于启动服务器
-// 使用方法：通过环境变量控制端口
-// PORT=8001 go test -v -run TestServer
 func TestServer(t *testing.T) {
-	// 1. 获取环境变量中的端口，默认为 8001
-	portStr := os.Getenv("PORT")
-	port := 8001
-	if portStr != "" {
-		p, err := strconv.Atoi(portStr)
-		if err == nil {
-			port = p
-		}
-	}
-
-	// 2. 获取是否启动 API 服务器，默认为 false
-	api := false
-	if os.Getenv("API") == "1" {
-		api = true
-	}
-
-	// 3. 固定的节点配置
-	apiAddr := "http://localhost:9999"
+	// 1. 固定配置
 	addrMap := map[int]string{
-		8001: "http://localhost:8001",
-		8002: "http://localhost:8002",
-		8003: "http://localhost:8003",
+		8001: "http://localhost:8001", // 我们只测这一个节点
 	}
 
 	var addrs []string
@@ -87,16 +64,31 @@ func TestServer(t *testing.T) {
 		addrs = append(addrs, v)
 	}
 
-	// 4. 创建 Group
+	// 2. 创建 Group
 	gee := createGroup()
 
-	// 5. 如果是 API 节点，启动 API 服务
-	if api {
-		go startAPIServer(apiAddr, gee)
-		// 稍微等待一下，避免日志打印混乱
-		time.Sleep(time.Second)
-	}
+	// 3. 启动缓存服务器 (后台运行)
+	go startCacheServer(addrMap[8001], addrs, gee)
 
-	// 6. 启动缓存服务（这一步是阻塞的，所以最后执行）
-	startCacheServer(addrMap[port], addrs, gee)
+	// 4. 等待服务器启动
+	time.Sleep(time.Second)
+
+	// 5. 发起请求
+	// 注意：这里的 URL 里的 "scores_server" 必须和 createGroup 里的名字一致
+	targetURL := "http://localhost:8001/_geecache/scores_server/Tom"
+
+	t.Logf("发起请求: %s", targetURL)
+	res, err := http.Get(targetURL)
+	if err != nil {
+		t.Fatalf("无法连接到缓存服务器: %v", err)
+	}
+	defer res.Body.Close()
+
+	// 6. 验证结果
+	body, _ := io.ReadAll(res.Body)
+	t.Logf("服务器响应: %s", string(body))
+
+	if string(body) != "630" {
+		t.Errorf("响应错误! 期望: 630, 实际: %s", string(body))
+	}
 }
