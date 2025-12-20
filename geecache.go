@@ -28,6 +28,7 @@ type Group struct {
 	peers        PeerPicker
 	loader       *singleflight.Group
 	ttl          time.Duration
+	mq           MessageQueue
 }
 
 var (
@@ -40,6 +41,27 @@ func (g *Group) RegisterPeers(peers PeerPicker) {
 		panic("RegisterPeerPicker called more than once")
 	}
 	g.peers = peers
+}
+
+// RegisterMQ 注册消息队列，用于接收缓存失效通知
+// topic: 订阅的主题，通常是缓存组的名称
+func (g *Group) RegisterMQ(mq MessageQueue, topic string) error {
+	ch, err := mq.Subscribe(topic)
+	if err != nil {
+		return err
+	}
+	g.mq = mq
+	go g.listenMQ(ch)
+	return nil
+}
+
+func (g *Group) listenMQ(ch <-chan string) {
+	for key := range ch {
+		// 收到失效广播，仅需删除本地缓存
+		// 因为假设所有节点都订阅了 MQ，所以不需要再发起 RPC 广播
+		g.RemoveLocal(key)
+		// log.Printf("[GeeCache] MQ Invalidate: %s", key)
+	}
 }
 
 func (g *Group) SetCentralCache(c CentralCache) {
