@@ -2,10 +2,13 @@ package geecache
 
 import (
 	"fmt"
+	pb "geecache/geecachepb"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func TestHTTPPool_ServeHTTP(t *testing.T) {
@@ -37,8 +40,12 @@ func TestHTTPPool_ServeHTTP(t *testing.T) {
 		t.Errorf("Case 1 失败: 期望状态码 200, 但得到 %d", w.Code)
 	}
 	// 5.2 验证 Body 内容 (应该是 "630")
-	if w.Body.String() != "630" {
-		t.Errorf("Case 1 失败: 期望 Body '630', 但得到 '%s'", w.Body.String())
+	res := &pb.Response{}
+	if err := proto.Unmarshal(w.Body.Bytes(), res); err != nil {
+		t.Errorf("proto unmarshal failed: %v", err)
+	}
+	if string(res.Value) != "630" {
+		t.Errorf("Case 1 失败: 期望 Body '630', 但得到 '%s'", string(res.Value))
 	}
 	// 5.3 验证 Content-Type
 	if contentType := w.Header().Get("Content-Type"); contentType != "application/octet-stream" {

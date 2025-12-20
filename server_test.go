@@ -2,11 +2,14 @@ package geecache
 
 import (
 	"fmt"
+	pb "geecache/geecachepb"
 	"io"
 	"log"
 	"net/http"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // 模拟数据库
@@ -86,9 +89,14 @@ func TestServer(t *testing.T) {
 
 	// 6. 验证结果
 	body, _ := io.ReadAll(res.Body)
-	t.Logf("服务器响应: %s", string(body))
 
-	if string(body) != "630" {
-		t.Errorf("响应错误! 期望: 630, 实际: %s", string(body))
+	pbRes := &pb.Response{}
+	if err := proto.Unmarshal(body, pbRes); err != nil {
+		t.Errorf("proto unmarshal failed: %v", err)
+	}
+	t.Logf("服务器响应: %s", string(pbRes.Value))
+
+	if string(pbRes.Value) != "630" {
+		t.Errorf("响应错误! 期望: 630, 实际: %s", string(pbRes.Value))
 	}
 }

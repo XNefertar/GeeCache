@@ -1,6 +1,9 @@
 package lru
 
-import "container/list"
+import (
+	"container/list"
+	"time"
+)
 
 type Cache struct {
 	maxBytes  int64
@@ -11,8 +14,9 @@ type Cache struct {
 }
 
 type entry struct {
-	key   string
-	value Value
+	key      string
+	value    Value
+	expireAt time.Time
 }
 
 type Value interface {
@@ -30,39 +34,63 @@ func New(maxBytes int64, onEvicted func(string, Value)) *Cache {
 
 func (c *Cache) Get(key string) (value Value, ok bool) {
 	if element, ok := c.cache[key]; ok {
-		c.ll.MoveToFront(element)
 		kv := element.Value.(*entry)
+		if !kv.expireAt.IsZero() && kv.expireAt.Before(time.Now()) {
+			c.RemoveElement(element)
+			return nil, false
+		}
+		c.ll.MoveToFront(element)
 		return kv.value, true
 	}
 	return nil, false
 }
 
-func (c *Cache) RemoveOldest() {
-	element := c.ll.Back()
-	if element != nil {
-		c.ll.Remove(element)
-		kv := element.Value.(*entry)
-		delete(c.cache, kv.key)
-		c.nbytes -= int64(len(kv.key)) + int64(kv.value.Len())
-		if c.OnEvicted != nil {
-			c.OnEvicted(kv.key, kv.value)
-		}
+func (c *Cache) RemoveElement(e *list.Element) {
+	c.ll.Remove(e)
+	kv := e.Value.(*entry)
+	delete(c.cache, kv.key)
+	c.nbytes -= int64(len(kv.key)) + int64(kv.value.Len())
+	if c.OnEvicted != nil {
+		c.OnEvicted(kv.key, kv.value)
 	}
 }
 
-func (c *Cache) Add(key string, value Value) {
+func (c *Cache) RemoveOldest() {
+	element := c.ll.Back()
+	if element != nil {
+		c.RemoveElement(element)
+	}
+}
+
+func (c *Cache) Add(key string, value Value, ttl time.Duration) {
+	var expireAt time.Time
+	if ttl > 0 {
+		expireAt = time.Now().Add(ttl)
+	}
 	if element, ok := c.cache[key]; ok {
 		c.ll.MoveToFront(element)
 		kv := element.Value.(*entry)
 		c.nbytes += int64(value.Len()) - int64(kv.value.Len())
 		kv.value = value
+		kv.expireAt = expireAt
 	} else {
-		ele := c.ll.PushFront(&entry{key, value})
+		ele := c.ll.PushFront(&entry{key, value, expireAt})
 		c.cache[key] = ele
 		c.nbytes += int64(len(key)) + int64(value.Len())
 	}
 	for c.maxBytes != 0 && c.maxBytes < c.nbytes {
 		c.RemoveOldest()
+	}
+}
+
+func (c *Cache) RemoveExpired() {
+	for e := c.ll.Front(); e != nil; {
+		next := e.Next()
+		kv := e.Value.(*entry)
+		if !kv.expireAt.IsZero() && kv.expireAt.Before(time.Now()) {
+			c.RemoveElement(e)
+		}
+		e = next
 	}
 }
 

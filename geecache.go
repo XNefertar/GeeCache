@@ -6,6 +6,7 @@ import (
 	"geecache/singleflight"
 	"log"
 	"sync"
+	"time"
 )
 
 type Getter interface {
@@ -24,6 +25,7 @@ type Group struct {
 	mainCache cache
 	peers     PeerPicker
 	loader    *singleflight.Group
+	ttl       time.Duration
 }
 
 var (
@@ -36,6 +38,20 @@ func (g *Group) RegisterPeers(peers PeerPicker) {
 		panic("RegisterPeerPicker called more than once")
 	}
 	g.peers = peers
+}
+
+func (g *Group) SetTTL(ttl time.Duration) {
+	g.ttl = ttl
+}
+
+func (g *Group) RunCleanup(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			g.mainCache.removeExpired()
+		}
+	}()
 }
 
 func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
@@ -123,5 +139,5 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 }
 
 func (g *Group) populateCache(key string, value ByteView) {
-	g.mainCache.add(key, value)
+	g.mainCache.add(key, value, g.ttl)
 }
