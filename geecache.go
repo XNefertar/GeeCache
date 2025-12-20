@@ -23,6 +23,7 @@ type Group struct {
 	name      string
 	getter    Getter
 	mainCache cache
+	hotCache  cache
 	peers     PeerPicker
 	loader    *singleflight.Group
 	ttl       time.Duration
@@ -50,6 +51,7 @@ func (g *Group) RunCleanup(interval time.Duration) {
 		defer ticker.Stop()
 		for range ticker.C {
 			g.mainCache.removeExpired()
+			g.hotCache.removeExpired()
 		}
 	}()
 }
@@ -63,11 +65,14 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 
 	// Use factory to initialize sharded cache
 	c := newCache(cacheBytes)
+	// Initialize hotCache with 1/8th of the capacity
+	hc := newCache(cacheBytes / 8)
 
 	g := &Group{
 		name:      name,
 		getter:    getter,
 		mainCache: *c,
+		hotCache:  *hc,
 		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
@@ -88,6 +93,13 @@ func (g *Group) Get(key string) (ByteView, error) {
 		return ByteView{}, fmt.Errorf("key is required")
 	}
 
+	// 1. Check Hot Cache (L1) - Client-side caching for hot keys
+	if v, ok := g.hotCache.get(key); ok {
+		// log.Println("[GeeCache] hotCache hit")
+		return v, nil
+	}
+
+	// 2. Check Main Cache (L2) - Authoritative cache for this node
 	if v, ok := g.mainCache.get(key); ok {
 		// log.Println("[GeeCache] hit")
 		return v, nil
@@ -101,6 +113,8 @@ func (g *Group) load(key string) (value ByteView, err error) {
 		if g.peers != nil {
 			if peer, ok := g.peers.PickPeer(key); ok {
 				if value, err := g.getFromPeer(peer, key); err == nil {
+					// Hot Key Protection: Cache remote value locally for a short time
+					g.populateHotCache(key, value)
 					return value, nil
 				}
 				log.Println("[GeeCache] Failed to get from peer", err)
@@ -143,4 +157,11 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 
 func (g *Group) populateCache(key string, value ByteView) {
 	g.mainCache.add(key, value, g.ttl)
+}
+
+func (g *Group) populateHotCache(key string, value ByteView) {
+	// Hot Cache TTL: Short (e.g. 10% of main TTL or fixed 5s) to prevent stale data
+	// while protecting against hot key spikes.
+	hotCacheTTL := 5 * time.Second
+	g.hotCache.add(key, value, hotCacheTTL)
 }
