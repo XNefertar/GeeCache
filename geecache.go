@@ -61,15 +61,18 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Use factory to initialize sharded cache
+	c := newCache(cacheBytes)
+
 	g := &Group{
-		name:   name,
-		getter: getter,
-		mainCache: cache{
-			cacheBytes: cacheBytes,
-		},
-		loader: &singleflight.Group{},
+		name:      name,
+		getter:    getter,
+		mainCache: *c,
+		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
+	// Start periodic cleanup (Redis style)
+	g.RunCleanup(time.Second * 10)
 	return g
 }
 
@@ -86,7 +89,7 @@ func (g *Group) Get(key string) (ByteView, error) {
 	}
 
 	if v, ok := g.mainCache.get(key); ok {
-		log.Println("[GeeCache] hit")
+		// log.Println("[GeeCache] hit")
 		return v, nil
 	}
 

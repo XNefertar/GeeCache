@@ -17,6 +17,8 @@ type entry struct {
 	key      string
 	value    Value
 	expireAt time.Time
+	// Redis-style Object Type (0: String, 1: List, etc.)
+	dataType uint8
 }
 
 type Value interface {
@@ -74,7 +76,7 @@ func (c *Cache) Add(key string, value Value, ttl time.Duration) {
 		kv.value = value
 		kv.expireAt = expireAt
 	} else {
-		ele := c.ll.PushFront(&entry{key, value, expireAt})
+		ele := c.ll.PushFront(&entry{key, value, expireAt, 0})
 		c.cache[key] = ele
 		c.nbytes += int64(len(key)) + int64(value.Len())
 	}
