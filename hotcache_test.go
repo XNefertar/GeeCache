@@ -23,6 +23,10 @@ func (m *mockPeerGetter) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
+func (m *mockPeerGetter) Remove(in *pb.Request) error {
+	return nil
+}
+
 // Mock PeerPicker
 type mockPeerPicker struct {
 	peer *mockPeerGetter
@@ -31,6 +35,10 @@ type mockPeerPicker struct {
 func (m *mockPeerPicker) PickPeer(key string) (PeerGetter, bool) {
 	// Always return the same peer for testing
 	return m.peer, true
+}
+
+func (m *mockPeerPicker) GetAllPeers() []PeerGetter {
+	return []PeerGetter{m.peer}
 }
 
 func TestHotCacheProtection(t *testing.T) {

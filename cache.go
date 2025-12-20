@@ -36,6 +36,14 @@ func (c *cacheShard) get(key string) (value ByteView, ok bool) {
 	return
 }
 
+func (c *cacheShard) remove(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lru != nil {
+		c.lru.Remove(key)
+	}
+}
+
 func (c *cacheShard) removeExpired() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -87,6 +95,10 @@ func (c *cache) add(key string, value ByteView, ttl time.Duration) {
 
 func (c *cache) get(key string) (ByteView, bool) {
 	return c.getShard(key).get(key)
+}
+
+func (c *cache) remove(key string) {
+	c.getShard(key).remove(key)
 }
 
 func (c *cache) removeExpired() {

@@ -50,3 +50,16 @@ func (m *Map) Get(key string) string {
 
 	return m.hashMap[m.keys[idx%len(m.keys)]]
 }
+
+// List returns all unique keys (peers) in the map.
+func (m *Map) List() []string {
+	unique := make(map[string]bool)
+	var list []string
+	for _, v := range m.hashMap {
+		if !unique[v] {
+			unique[v] = true
+			list = append(list, v)
+		}
+	}
+	return list
+}

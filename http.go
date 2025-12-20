@@ -21,6 +21,7 @@ const (
 
 type PeerPicker interface {
 	PickPeer(key string) (peer PeerGetter, ok bool)
+	GetAllPeers() []PeerGetter
 }
 
 type HTTPPool struct {
@@ -61,6 +62,12 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if group == nil {
 		http.Error(w, "no such group: "+groupName, http.StatusNotFound)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		group.RemoveLocal(key)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -113,6 +120,29 @@ func (h *httpGetter) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
+func (h *httpGetter) Remove(in *pb.Request) error {
+	u := fmt.Sprintf(
+		"%v%v/%v",
+		h.baseURL,
+		url.QueryEscape(in.Group),
+		url.QueryEscape(in.Key),
+	)
+	req, err := http.NewRequest(http.MethodDelete, u, nil)
+	if err != nil {
+		return err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned: %v", res.Status)
+	}
+	return nil
+}
+
 // 类型断言，检查httpGetter是否实现了PeerGetter接口
 var _ PeerGetter = (*httpGetter)(nil)
 
@@ -135,6 +165,18 @@ func (p *HTTPPool) PickPeer(key string) (PeerGetter, bool) {
 		return p.httpGetter[peer], true
 	}
 	return nil, false
+}
+
+func (p *HTTPPool) GetAllPeers() []PeerGetter {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var peers []PeerGetter
+	for _, peer := range p.peers.List() {
+		if peer != p.self {
+			peers = append(peers, p.httpGetter[peer])
+		}
+	}
+	return peers
 }
 
 var _ PeerPicker = (*HTTPPool)(nil)

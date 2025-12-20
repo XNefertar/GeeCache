@@ -108,6 +108,33 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key)
 }
 
+func (g *Group) RemoveLocal(key string) {
+	g.mainCache.remove(key)
+	g.hotCache.remove(key)
+}
+
+func (g *Group) Remove(key string) error {
+	g.RemoveLocal(key)
+
+	if g.peers != nil {
+		peers := g.peers.GetAllPeers()
+		var wg sync.WaitGroup
+		for _, peer := range peers {
+			wg.Add(1)
+			go func(p PeerGetter) {
+				defer wg.Done()
+				req := &pb.Request{
+					Group: g.name,
+					Key:   key,
+				}
+				p.Remove(req)
+			}(peer)
+		}
+		wg.Wait()
+	}
+	return nil
+}
+
 func (g *Group) load(key string) (value ByteView, err error) {
 	viewi, err := g.loader.Do(key, func() (interface{}, error) {
 		if g.peers != nil {

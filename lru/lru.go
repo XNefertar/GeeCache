@@ -47,6 +47,13 @@ func (c *Cache) Get(key string) (value Value, ok bool) {
 	return nil, false
 }
 
+// Remove removes the provided key from the cache.
+func (c *Cache) Remove(key string) {
+	if element, ok := c.cache[key]; ok {
+		c.RemoveElement(element)
+	}
+}
+
 func (c *Cache) RemoveElement(e *list.Element) {
 	c.ll.Remove(e)
 	kv := e.Value.(*entry)
