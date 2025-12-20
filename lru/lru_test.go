@@ -66,3 +66,21 @@ func TestExpiration(t *testing.T) {
 		t.Fatalf("cache expire key1 failed")
 	}
 }
+
+func TestRemoveExpired(t *testing.T) {
+	lru := New(int64(0), nil)
+	lru.Add("key1", String("1234"), time.Millisecond*100)
+	lru.Add("key2", String("5678"), time.Hour)
+
+	time.Sleep(time.Millisecond * 200)
+
+	if lru.Len() != 2 {
+		t.Fatalf("should have 2 items before cleanup")
+	}
+
+	lru.RemoveExpired(10)
+
+	if lru.Len() != 1 {
+		t.Fatalf("should have 1 item after cleanup, got %d", lru.Len())
+	}
+}

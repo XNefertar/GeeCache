@@ -83,14 +83,17 @@ func (c *Cache) Add(key string, value Value, ttl time.Duration) {
 	}
 }
 
-func (c *Cache) RemoveExpired() {
-	for e := c.ll.Front(); e != nil; {
-		next := e.Next()
-		kv := e.Value.(*entry)
-		if !kv.expireAt.IsZero() && kv.expireAt.Before(time.Now()) {
-			c.RemoveElement(e)
+func (c *Cache) RemoveExpired(maxKeys int) {
+	var count int
+	for _, element := range c.cache {
+		if count >= maxKeys {
+			break
 		}
-		e = next
+		count++
+		kv := element.Value.(*entry)
+		if !kv.expireAt.IsZero() && kv.expireAt.Before(time.Now()) {
+			c.RemoveElement(element)
+		}
 	}
 }
 

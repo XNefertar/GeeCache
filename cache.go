@@ -37,6 +37,8 @@ func (c *cache) removeExpired() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru != nil {
-		c.lru.RemoveExpired()
+		// 优化：每次随机检查 20 个 Key (参考 Redis 策略)
+		// 避免全量遍历导致的长时间锁阻塞 (Stop-The-World)
+		c.lru.RemoveExpired(20)
 	}
 }
