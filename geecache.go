@@ -20,13 +20,14 @@ func (f GetterFunc) Get(key string) ([]byte, error) {
 }
 
 type Group struct {
-	name      string
-	getter    Getter
-	mainCache cache
-	hotCache  cache
-	peers     PeerPicker
-	loader    *singleflight.Group
-	ttl       time.Duration
+	name         string
+	getter       Getter
+	mainCache    cache
+	hotCache     cache
+	centralCache CentralCache
+	peers        PeerPicker
+	loader       *singleflight.Group
+	ttl          time.Duration
 }
 
 var (
@@ -39,6 +40,10 @@ func (g *Group) RegisterPeers(peers PeerPicker) {
 		panic("RegisterPeerPicker called more than once")
 	}
 	g.peers = peers
+}
+
+func (g *Group) SetCentralCache(c CentralCache) {
+	g.centralCache = c
 }
 
 func (g *Group) SetTTL(ttl time.Duration) {
@@ -116,6 +121,10 @@ func (g *Group) RemoveLocal(key string) {
 func (g *Group) Remove(key string) error {
 	g.RemoveLocal(key)
 
+	if g.centralCache != nil {
+		g.centralCache.Delete(key)
+	}
+
 	if g.peers != nil {
 		peers := g.peers.GetAllPeers()
 		var wg sync.WaitGroup
@@ -171,6 +180,16 @@ func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
 }
 
 func (g *Group) getLocally(key string) (ByteView, error) {
+	// 1. Try L3 (Central Cache)
+	if g.centralCache != nil {
+		if v, err := g.centralCache.Get(key); err == nil && v != nil {
+			value := ByteView{b: cloneBytes(v)}
+			g.populateCache(key, value)
+			return value, nil
+		}
+	}
+
+	// 2. Fallback to Source (DB)
 	bytes, err := g.getter.Get(key)
 	if err != nil {
 		return ByteView{}, err
@@ -178,6 +197,12 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 	value := ByteView{
 		b: cloneBytes(bytes),
 	}
+
+	// 3. Populate L3
+	if g.centralCache != nil {
+		g.centralCache.Set(key, value.ByteSlice())
+	}
+
 	g.populateCache(key, value)
 	return value, nil
 }
