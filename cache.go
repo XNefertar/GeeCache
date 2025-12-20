@@ -3,6 +3,7 @@ package geecache
 import (
 	"geecache/lru"
 	"sync"
+	"time"
 )
 
 type cache struct {
@@ -11,13 +12,13 @@ type cache struct {
 	cacheBytes int64
 }
 
-func (c *cache) add(key string, value ByteView) {
+func (c *cache) add(key string, value ByteView, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
 		c.lru = lru.New(c.cacheBytes, nil)
 	}
-	c.lru.Add(key, value)
+	c.lru.Add(key, value, ttl)
 }
 
 func (c *cache) get(key string) (value ByteView, ok bool) {
@@ -30,4 +31,12 @@ func (c *cache) get(key string) (value ByteView, ok bool) {
 		return v.(ByteView), ok
 	}
 	return
+}
+
+func (c *cache) removeExpired() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lru != nil {
+		c.lru.RemoveExpired()
+	}
 }
