@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-#include <fstream>
 #include <mutex>
 
 namespace lsm {
@@ -11,10 +10,11 @@ public:
     ~WAL();
 
     void Append(const std::string& key, const std::string& value, bool is_delete);
+    void Sync();
     
 private:
     std::string path_;
-    std::ofstream file_;
+    int fd_;
     std::mutex mutex_;
 };
 

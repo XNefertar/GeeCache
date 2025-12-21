@@ -17,6 +17,9 @@ file(GLOB_RECURSE SOURCES "core/*.cc" "util/*.cc")
 # 添加库
 add_library(lsm STATIC ${SOURCES})
 
+find_package(Threads REQUIRED)
+target_link_libraries(lsm PRIVATE Threads::Threads)
+
 # 如果找到 Snappy，则链接它
 if(SNAPPY_FOUND)
     target_include_directories(lsm PRIVATE ${SNAPPY_INCLUDE_DIR})
