@@ -9,6 +9,7 @@ find_package(Snappy)
 
 # 头文件目录
 include_directories(include)
+include_directories(.)
 
 # 源代码
 file(GLOB_RECURSE SOURCES "core/*.cc" "util/*.cc")

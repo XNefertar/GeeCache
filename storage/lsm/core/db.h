@@ -1,7 +1,9 @@
 #pragma once
 #include <string>
-#include <map>
 #include <mutex>
+#include <memory>
+#include "memtable.h"
+#include "wal.h"
 
 namespace lsm {
 
@@ -16,8 +18,11 @@ public:
 
 private:
     std::string path_;
-    std::map<std::string, std::string> data_;
+    std::unique_ptr<MemTable> memtable_;
+    std::unique_ptr<WAL> wal_;
     std::mutex mutex_;
+    
+    void Recover(const std::string& wal_path);
 };
 
 } // namespace lsm
