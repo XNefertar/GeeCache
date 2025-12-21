@@ -1,11 +1,14 @@
 package bridge
 
 import (
+	"os"
 	"testing"
 )
 
 func TestLSMStore(t *testing.T) {
-	store, err := NewLSMStore("/tmp/test_lsm_db")
+	path := "/tmp/test_lsm_db"
+	os.RemoveAll(path)
+	store, err := NewLSMStore(path)
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
@@ -39,5 +42,37 @@ func TestLSMStore(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("Get after delete should return nil, got %s", got)
+	}
+}
+
+func TestLSMPersistence(t *testing.T) {
+	path := "/tmp/test_lsm_persistence"
+	os.RemoveAll(path)
+
+	store, err := NewLSMStore(path)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	key := "persist_key"
+	value := []byte("persist_value")
+	if err := store.Set(key, value); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	store.Close()
+
+	// Reopen
+	store2, err := NewLSMStore(path)
+	if err != nil {
+		t.Fatalf("Failed to reopen store: %v", err)
+	}
+	defer store2.Close()
+
+	got, err := store2.Get(key)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if string(got) != string(value) {
+		t.Errorf("Get got %s, want %s", got, value)
 	}
 }
