@@ -1,6 +1,7 @@
-package geecache
+package tests
 
 import (
+	"geecache"
 	"testing"
 )
 
@@ -29,14 +30,14 @@ func TestL3Cache(t *testing.T) {
 	db := map[string]string{
 		"key1": "value1",
 	}
-	getter := GetterFunc(func(key string) ([]byte, error) {
+	getter := geecache.GetterFunc(func(key string) ([]byte, error) {
 		if v, ok := db[key]; ok {
 			return []byte(v), nil
 		}
 		return nil, nil
 	})
 
-	g := NewGroup("l3_test", 2<<10, getter)
+	g := geecache.NewGroup("l3_test", 2<<10, getter)
 	l3 := &MockCentralCache{data: make(map[string][]byte)}
 	g.SetCentralCache(l3)
 
@@ -50,14 +51,14 @@ func TestL3Cache(t *testing.T) {
 		t.Fatal("L3 cache not populated")
 	}
 
-	// 2. Modify L3 directly to simulate external update (or just to test L3 priority)
-	l3.data["key1"] = []byte("value1_modified")
-	// Clear local cache to force load
-	g.mainCache.remove("key1")
-	g.hotCache.remove("key1")
+	// 2. Clear DB, Get key1 again (Hit L3)
+	delete(db, "key1")
+	// Also clear local cache to force L3 lookup?
+	// Group doesn't expose method to clear local cache easily for tests unless we use Remove
+	g.RemoveLocal("key1")
 
 	v, err = g.Get("key1")
-	if err != nil || v.String() != "value1_modified" {
+	if err != nil || v.String() != "value1" {
 		t.Fatalf("failed to get key1 from L3: %v, %s", err, v.String())
 	}
 }

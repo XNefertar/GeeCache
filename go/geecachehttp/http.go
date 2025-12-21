@@ -1,7 +1,8 @@
-package geecache
+package geecachehttp
 
 import (
 	"fmt"
+	"geecache"
 	"geecache/consistenthash"
 	pb "geecache/geecachepb"
 	"io"
@@ -18,11 +19,6 @@ const (
 	defaultBasePath = "/_geecache/"
 	defaultReplicas = 50
 )
-
-type PeerPicker interface {
-	PickPeer(key string) (peer PeerGetter, ok bool)
-	GetAllPeers() []PeerGetter
-}
 
 type HTTPPool struct {
 	self       string
@@ -58,7 +54,7 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	groupName := parts[0]
 	key := parts[1]
 
-	group := GetGroup(groupName)
+	group := geecache.GetGroup(groupName)
 
 	if group == nil {
 		http.Error(w, "no such group: "+groupName, http.StatusNotFound)
@@ -144,7 +140,7 @@ func (h *httpGetter) Remove(in *pb.Request) error {
 }
 
 // 类型断言，检查httpGetter是否实现了PeerGetter接口
-var _ PeerGetter = (*httpGetter)(nil)
+var _ geecache.PeerGetter = (*httpGetter)(nil)
 
 func (p *HTTPPool) Set(peers ...string) {
 	p.mu.Lock()
@@ -157,7 +153,7 @@ func (p *HTTPPool) Set(peers ...string) {
 	}
 }
 
-func (p *HTTPPool) PickPeer(key string) (PeerGetter, bool) {
+func (p *HTTPPool) PickPeer(key string) (geecache.PeerGetter, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if peer := p.peers.Get(key); peer != "" && peer != p.self {
@@ -167,10 +163,10 @@ func (p *HTTPPool) PickPeer(key string) (PeerGetter, bool) {
 	return nil, false
 }
 
-func (p *HTTPPool) GetAllPeers() []PeerGetter {
+func (p *HTTPPool) GetAllPeers() []geecache.PeerGetter {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	var peers []PeerGetter
+	var peers []geecache.PeerGetter
 	for _, peer := range p.peers.List() {
 		if peer != p.self {
 			peers = append(peers, p.httpGetter[peer])
@@ -179,4 +175,4 @@ func (p *HTTPPool) GetAllPeers() []PeerGetter {
 	return peers
 }
 
-var _ PeerPicker = (*HTTPPool)(nil)
+var _ geecache.PeerPicker = (*HTTPPool)(nil)

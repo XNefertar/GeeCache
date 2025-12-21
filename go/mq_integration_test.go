@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"geecache/mq"
 	"testing"
 	"time"
 )
@@ -13,8 +14,8 @@ func TestMQIntegration(t *testing.T) {
 	g := NewGroup("mq_test", 2<<20, getter)
 
 	// 2. Setup MQ
-	mq := NewMemoryMQ()
-	err := g.RegisterMQ(mq, "mq_test_topic")
+	q := mq.NewMemoryMQ()
+	err := g.RegisterMQ(q, "mq_test_topic")
 	if err != nil {
 		t.Fatalf("failed to register mq: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestMQIntegration(t *testing.T) {
 
 	// 4. Simulate DB Update & Publish Invalidation
 	// (In real world, this happens in the application layer)
-	err = mq.Publish("mq_test_topic", key)
+	err = q.Publish("mq_test_topic", key)
 	if err != nil {
 		t.Fatal(err)
 	}

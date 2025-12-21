@@ -1,4 +1,4 @@
-package geecache
+package mq
 
 // MessageQueue 定义了消息队列的抽象接口
 // 任何实现了该接口的组件（如 Redis Pub/Sub, Kafka Consumer）都可以集成到 GeeCache 中

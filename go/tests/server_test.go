@@ -1,7 +1,9 @@
-package geecache
+package tests
 
 import (
 	"fmt"
+	"geecache"
+	"geecache/geecachehttp"
 	pb "geecache/geecachepb"
 	"io"
 	"log"
@@ -19,8 +21,8 @@ var serverDB = map[string]string{
 	"Sam":  "567",
 }
 
-func createGroup() *Group {
-	return NewGroup("scores_server", 2<<10, GetterFunc(
+func createGroup() *geecache.Group {
+	return geecache.NewGroup("scores_server", 2<<10, geecache.GetterFunc(
 		func(key string) ([]byte, error) {
 			log.Println("[SlowDB] search key", key)
 			if v, ok := serverDB[key]; ok {
@@ -30,8 +32,8 @@ func createGroup() *Group {
 		}))
 }
 
-func startCacheServer(addr string, addrs []string, gee *Group) {
-	peers := NewHTTPPool(addr)
+func startCacheServer(addr string, addrs []string, gee *geecache.Group) {
+	peers := geecachehttp.NewHTTPPool(addr)
 	peers.Set(addrs...)
 	gee.RegisterPeers(peers)
 	log.Println("geecache is running at", addr)
@@ -39,7 +41,7 @@ func startCacheServer(addr string, addrs []string, gee *Group) {
 	log.Fatal(http.ListenAndServe(addr[7:], peers))
 }
 
-func startAPIServer(apiAddr string, gee *Group) {
+func startAPIServer(apiAddr string, gee *geecache.Group) {
 	http.Handle("/api", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			key := r.URL.Query().Get("key")
