@@ -19,9 +19,27 @@ func (f GetterFunc) Get(key string) ([]byte, error) {
 	return f(key)
 }
 
+type Setter interface {
+	Set(key string, value []byte) error
+}
+
+type SetterFunc func(key string, value []byte) error
+
+func (f SetterFunc) Set(key string, value []byte) error {
+	return f(key, value)
+}
+
+type WriteStrategy int
+
+const (
+	StrategyWriteThrough WriteStrategy = iota
+	StrategyWriteBack
+)
+
 type Group struct {
 	name         string
 	getter       Getter
+	setter       Setter
 	mainCache    cache
 	hotCache     cache
 	centralCache CentralCache
@@ -29,6 +47,7 @@ type Group struct {
 	loader       *singleflight.Group
 	ttl          time.Duration
 	mq           MessageQueue
+	mqTopic      string
 }
 
 var (
@@ -43,6 +62,10 @@ func (g *Group) RegisterPeers(peers PeerPicker) {
 	g.peers = peers
 }
 
+func (g *Group) RegisterSetter(setter Setter) {
+	g.setter = setter
+}
+
 // RegisterMQ 注册消息队列，用于接收缓存失效通知
 // topic: 订阅的主题，通常是缓存组的名称
 func (g *Group) RegisterMQ(mq MessageQueue, topic string) error {
@@ -51,6 +74,7 @@ func (g *Group) RegisterMQ(mq MessageQueue, topic string) error {
 		return err
 	}
 	g.mq = mq
+	g.mqTopic = topic
 	go g.listenMQ(ch)
 	return nil
 }
@@ -135,6 +159,58 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key)
 }
 
+func (g *Group) Set(key string, value []byte, strategy WriteStrategy) error {
+	if g.setter == nil {
+		return fmt.Errorf("setter not registered")
+	}
+
+	// Helper to broadcast invalidation
+	broadcast := func() {
+		if g.mq != nil {
+			g.mq.Publish(g.mqTopic, key)
+		}
+	}
+
+	switch strategy {
+	case StrategyWriteThrough:
+		// 1. Update DB first (Synchronous)
+		if err := g.setter.Set(key, value); err != nil {
+			return err
+		}
+		// 2. Update L3 (Central Cache)
+		if g.centralCache != nil {
+			g.centralCache.Set(key, value)
+		}
+		// 3. Update Local Cache (L2)
+		g.populateCache(key, ByteView{b: cloneBytes(value)})
+		// 4. Broadcast Invalidation
+		broadcast()
+		return nil
+	case StrategyWriteBack:
+		// 1. Update Local Cache (L2)
+		g.populateCache(key, ByteView{b: cloneBytes(value)})
+		// 2. Async update DB & L3
+		go func() {
+			if err := g.setter.Set(key, value); err != nil {
+				log.Printf("[GeeCache] Write-Back failed for key %s: %v", key, err)
+			} else {
+				// Only update L3 if DB write succeeded
+				if g.centralCache != nil {
+					g.centralCache.Set(key, value)
+				}
+				// Broadcast Invalidation after DB update to avoid stale reads from DB?
+				// Or broadcast immediately?
+				// Immediate broadcast might cause peers to read stale data from DB.
+				// Delayed broadcast ensures DB is ready.
+				broadcast()
+			}
+		}()
+		return nil
+	default:
+		return fmt.Errorf("unknown strategy")
+	}
+}
+
 func (g *Group) RemoveLocal(key string) {
 	g.mainCache.remove(key)
 	g.hotCache.remove(key)
@@ -145,6 +221,11 @@ func (g *Group) Remove(key string) error {
 
 	if g.centralCache != nil {
 		g.centralCache.Delete(key)
+	}
+
+	// Prefer MQ for cluster-wide invalidation
+	if g.mq != nil {
+		return g.mq.Publish(g.mqTopic, key)
 	}
 
 	if g.peers != nil {
