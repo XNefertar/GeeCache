@@ -2,6 +2,14 @@
 # 忽略 Windows 下的可执行文件
 *.exe
 *.dll
+*.so
+*.dylib
+*.a
+*.o
+
+# 忽略 C++ 构建目录
+storage/lsm/build/
+storage/lsm/cmake-build-*/
 
 # 忽略测试生成的二进制文件
 *.test
