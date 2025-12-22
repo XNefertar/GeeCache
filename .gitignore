@@ -44,3 +44,6 @@ vendor/
 
 # --- 5. 敏感信息 (Secrets) ---
 .env
+
+# --- 6. github 配置文件 ---
+.github

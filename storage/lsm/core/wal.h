@@ -13,9 +13,9 @@ public:
     void Sync();
     
 private:
-    std::string path_;
-    int fd_;
-    std::mutex mutex_;
+    std::string _path;
+    int _fd;
+    std::mutex _mutex;
 };
 
 } // namespace lsm

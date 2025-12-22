@@ -11,8 +11,11 @@ public:
     bool Get(const std::string& key, std::string* value);
     void Delete(const std::string& key);
 
+    // Returns a new iterator. The caller must delete it.
+    SkipList::Iterator* NewIterator() const;
+
 private:
-    SkipList skiplist_;
+    SkipList _skiplist;
 };
 
 } // namespace lsm

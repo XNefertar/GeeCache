@@ -9,67 +9,75 @@ namespace lsm {
 namespace fs = std::filesystem;
 
 DB::DB(const std::string& path, const Options& options) 
-    : path_(path), options_(options), stop_sync_(false) {
+    : _path(path), _options(options), _stop_sync(false) {
     if (!fs::exists(path)) {
         fs::create_directories(path);
     }
     
     std::string wal_path = path + "/wal.log";
     
-    memtable_ = std::make_unique<MemTable>();
+    _memtable = std::make_unique<MemTable>();
+    _versions = std::make_unique<VersionSet>(path);
     
     Recover(wal_path);
     
-    wal_ = std::make_unique<WAL>(wal_path);
+    _wal = std::make_unique<WAL>(wal_path);
     
-    if (!options_.sync) {
-        sync_thread_ = std::thread(&DB::BackgroundSync, this);
+    if (!_options.sync) {
+        _sync_thread = std::thread(&DB::BackgroundSync, this);
     }
     
-    std::cout << "[C++] DB opened at " << path_ << std::endl;
+    std::cout << "[C++] DB opened at " << _path << std::endl;
 }
 
 DB::~DB() {
-    stop_sync_ = true;
-    if (sync_thread_.joinable()) {
-        sync_thread_.join();
+    _stop_sync = true;
+    if (_sync_thread.joinable()) {
+        _sync_thread.join();
     }
     // Force final sync on close
-    if (wal_) {
-        wal_->Sync();
+    if (_wal) {
+        _wal->Sync();
     }
     std::cout << "[C++] DB closed" << std::endl;
 }
 
 void DB::Put(const std::string& key, const std::string& value) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    wal_->Append(key, value, false);
-    if (options_.sync) {
-        wal_->Sync();
+    std::lock_guard<std::mutex> lock(_mutex);
+    _wal->Append(key, value, false);
+    if (_options.sync) {
+        _wal->Sync();
     }
-    memtable_->Put(key, value);
+    _memtable->Put(key, value);
 }
 
 bool DB::Get(const std::string& key, std::string* value) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return memtable_->Get(key, value);
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_memtable->Get(key, value)) {
+        return true;
+    }
+    // Check SSTables via Version
+    int result = _versions->current()->Get(key, value);
+    if (result == 1) return true; // Found
+    if (result == 2) return false; // Deleted
+    return false; // Not found
 }
 
 void DB::Delete(const std::string& key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    wal_->Append(key, "", true);
-    if (options_.sync) {
-        wal_->Sync();
+    std::lock_guard<std::mutex> lock(_mutex);
+    _wal->Append(key, "", true);
+    if (_options.sync) {
+        _wal->Sync();
     }
-    memtable_->Delete(key);
+    _memtable->Delete(key);
 }
 
 void DB::BackgroundSync() {
-    while (!stop_sync_) {
+    while (!_stop_sync) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        if (stop_sync_) break;
-        if (wal_) {
-            wal_->Sync();
+        if (_stop_sync) break;
+        if (_wal) {
+            _wal->Sync();
         }
     }
 }
@@ -98,42 +106,39 @@ void DB::Recover(const std::string& wal_path) {
         file.read(&key[0], klen);
         if (file.gcount() != klen) break;
         
-        if (type == 0) { // Put
+        // Read value (if not delete)
+        std::string value;
+        if (type == 0) {
             uint32_t vlen;
             file.read(reinterpret_cast<char*>(&vlen), sizeof(vlen));
             if (file.gcount() != sizeof(vlen)) break;
             
-            std::string value(vlen, '\0');
+            value.resize(vlen);
             file.read(&value[0], vlen);
             if (file.gcount() != vlen) break;
-            
-            memtable_->Put(key, value);
-        } else if (type == 1) { // Delete
-            uint32_t zero;
-            file.read(reinterpret_cast<char*>(&zero), sizeof(zero));
-            if (file.gcount() != sizeof(zero)) break;
-            
-            memtable_->Delete(key);
         } else {
-            // Unknown type, corrupted
-            break;
+            // Skip dummy vlen for delete
+            uint32_t vlen;
+            file.read(reinterpret_cast<char*>(&vlen), sizeof(vlen));
+            if (file.gcount() != sizeof(vlen)) break;
         }
         
-        // If we reached here, the record is valid
+        // Apply to memtable
+        if (type == 0) {
+            _memtable->Put(key, value);
+        } else {
+            _memtable->Delete(key);
+        }
+        
         valid_pos = file.tellg();
     }
     
     file.close();
     
-    // Truncate corrupted data at the end
-    try {
-        uintmax_t file_size = fs::file_size(wal_path);
-        if (static_cast<uintmax_t>(valid_pos) < file_size) {
-            std::cerr << "[Recover] Truncating corrupted WAL from " << file_size << " to " << valid_pos << std::endl;
-            fs::resize_file(wal_path, valid_pos);
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[Recover] Failed to truncate WAL: " << e.what() << std::endl;
+    // Truncate partial writes
+    if (fs::file_size(wal_path) != valid_pos) {
+        fs::resize_file(wal_path, valid_pos);
+        std::cout << "[C++] Recovered WAL, truncated to " << valid_pos << " bytes" << std::endl;
     }
 }
 
