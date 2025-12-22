@@ -23,13 +23,30 @@ public:
 
     void Insert(const std::string& key, const std::string& value, bool is_deleted = false);
     bool Get(const std::string& key, std::string* value);
+
+    class Iterator {
+    public:
+        explicit Iterator(const SkipList* list);
+        bool Valid() const;
+        void SeekToFirst();
+        void Seek(const std::string& target);
+        void Next();
+        const std::string& Key() const;
+        const std::string& Value() const;
+        bool IsDeleted() const;
+    private:
+        const SkipList* _list;
+        Node* _current;
+    };
+
+    Iterator* NewIterator() const;
     
 private:
     static const int kMaxLevel = 12;
-    Node* head_;
-    int level_;
-    std::mt19937 rng_;
-    std::uniform_int_distribution<> dist_;
+    Node* _head;
+    int _level;
+    std::mt19937 _rng;
+    std::uniform_int_distribution<> _dist;
 
     int RandomLevel();
 };

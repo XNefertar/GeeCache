@@ -6,6 +6,7 @@
 #include <atomic>
 #include "memtable.h"
 #include "wal.h"
+#include "core/version/version.h"
 
 namespace lsm {
 
@@ -23,14 +24,15 @@ public:
     void Delete(const std::string& key);
 
 private:
-    std::string path_;
-    Options options_;
-    std::unique_ptr<MemTable> memtable_;
-    std::unique_ptr<WAL> wal_;
-    std::mutex mutex_;
+    std::string _path;
+    Options _options;
+    std::unique_ptr<MemTable> _memtable;
+    std::unique_ptr<WAL> _wal;
+    std::unique_ptr<VersionSet> _versions;
+    std::mutex _mutex;
     
-    std::thread sync_thread_;
-    std::atomic<bool> stop_sync_;
+    std::thread _sync_thread;
+    std::atomic<bool> _stop_sync;
     void BackgroundSync();
     
     void Recover(const std::string& wal_path);

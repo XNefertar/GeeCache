@@ -28,3 +28,12 @@ endif()
 
 # 设置输出目录
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Tests
+add_executable(lsm_test test/lsm_test.cc)
+target_link_libraries(lsm_test PRIVATE lsm Threads::Threads)
+
+# Benchmarks
+add_executable(lsm_bench test/lsm_bench.cc)
+target_link_libraries(lsm_bench PRIVATE lsm Threads::Threads)
+

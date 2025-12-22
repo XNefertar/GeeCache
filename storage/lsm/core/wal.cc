@@ -7,22 +7,22 @@
 
 namespace lsm {
 
-    WAL::WAL(const std::string& path) : path_(path), fd_(-1) {
-        fd_ = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
-        if (fd_ < 0) {
+    WAL::WAL(const std::string& path) : _path(path), _fd(-1) {
+        _fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (_fd < 0) {
             std::cerr << "Failed to open WAL file: " << path << " Error: " << strerror(errno) << std::endl;
         }
     }
 
     WAL::~WAL() {
-        if (fd_ >= 0) {
-            ::close(fd_);
+        if (_fd >= 0) {
+            ::close(_fd);
         }
     }
 
     void WAL::Append(const std::string& key, const std::string& value, bool is_delete) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (fd_ < 0) return;
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (_fd < 0) return;
 
         // Simple format: type(1) | key_len(4) | key | val_len(4) | val
         // type: 0 = put, 1 = delete
@@ -53,7 +53,7 @@ namespace lsm {
             buffer.insert(buffer.end(), zero_ptr, zero_ptr + 4);
         }
         
-        ssize_t written = ::write(fd_, buffer.data(), buffer.size());
+        ssize_t written = ::write(_fd, buffer.data(), buffer.size());
         if (written < 0 || static_cast<size_t>(written) != buffer.size()) {
              std::cerr << "Failed to write to WAL: " << strerror(errno) << std::endl;
         }
@@ -61,9 +61,9 @@ namespace lsm {
     }
 
     void WAL::Sync() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (fd_ >= 0) {
-            ::fsync(fd_);
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (_fd >= 0) {
+            ::fsync(_fd);
         }
     }
 
