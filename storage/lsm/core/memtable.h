@@ -14,6 +14,8 @@ public:
     // Returns a new iterator. The caller must delete it.
     SkipList::Iterator* NewIterator() const;
 
+    size_t MemoryUsage() const { return _skiplist.MemoryUsage(); }
+
 private:
     SkipList _skiplist;
 };

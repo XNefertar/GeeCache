@@ -101,10 +101,72 @@ void TestConcurrencyCorrectness() {
     std::cout << "TestConcurrencyCorrectness Passed!" << std::endl;
 }
 
+void TestFlush() {
+    std::cout << "Running TestFlush..." << std::endl;
+    std::string db_path = "/tmp/lsm_test_flush";
+    CleanDB(db_path);
+
+    {
+        DB db(db_path);
+        // Write 5MB of data
+        std::string large_value(1024, 'a'); // 1KB
+        for (int i = 0; i < 5000; ++i) {
+            db.Put("key" + std::to_string(i), large_value);
+        }
+        
+        // Check if SSTable exists
+        bool sst_exists = false;
+        for (const auto& entry : fs::directory_iterator(db_path)) {
+            if (entry.path().extension() == ".sst") {
+                sst_exists = true;
+                break;
+            }
+        }
+        assert(sst_exists);
+        
+        // Verify data
+        std::string val;
+        assert(db.Get("key0", &val) && val == large_value);
+        assert(db.Get("key4999", &val) && val == large_value);
+    }
+    
+    CleanDB(db_path);
+    std::cout << "TestFlush Passed!" << std::endl;
+}
+
+void TestFlushRecovery() {
+    std::cout << "Running TestFlushRecovery..." << std::endl;
+    std::string db_path = "/tmp/lsm_test_flush_recovery";
+    CleanDB(db_path);
+
+    std::string large_value(1024, 'a'); // 1KB
+    int num_entries = 5000;
+
+    {
+        DB db(db_path);
+        for (int i = 0; i < num_entries; ++i) {
+            db.Put("key" + std::to_string(i), large_value);
+        }
+        // Should have flushed at least once
+    }
+
+    {
+        DB db(db_path);
+        std::string val;
+        assert(db.Get("key0", &val) && val == large_value);
+        assert(db.Get("key4999", &val) && val == large_value);
+    }
+    
+    CleanDB(db_path);
+    std::cout << "TestFlushRecovery Passed!" << std::endl;
+}
+
 int main() {
     TestBasic();
     TestRecovery();
     TestConcurrencyCorrectness();
+    TestFlush();
+    TestFlushRecovery();
     std::cout << "All Correctness Tests Passed!" << std::endl;
     return 0;
 }

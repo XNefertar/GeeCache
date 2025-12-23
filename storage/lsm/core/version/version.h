@@ -27,6 +27,8 @@ public:
     int Get(const std::string& key, std::string* value);
 
     std::vector<FileMetaData> GetFiles(int level) const;
+    
+    void SortL0();
 
 private:
     std::string _dbname;
@@ -53,6 +55,9 @@ public:
     
     // Apply a change (e.g. add a new SSTable)
     void LogAndApply(Version* edit); // Simplified
+
+    // Recover from disk (scan .sst files)
+    void Recover();
 
 private:
     std::string _dbname;

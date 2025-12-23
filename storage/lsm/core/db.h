@@ -36,6 +36,9 @@ private:
     void BackgroundSync();
     
     void Recover(const std::string& wal_path);
+    void Flush();
+    
+    const size_t kMemTableSizeLimit = 4 * 1024 * 1024; // 4MB
 };
 
 } // namespace lsm

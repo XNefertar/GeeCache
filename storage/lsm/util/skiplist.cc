@@ -38,7 +38,9 @@ void SkipList::Insert(const std::string& key, const std::string& value, bool is_
     current = current->next[0];
 
     if (current && current->key == key) {
+        _memory_usage -= current->value.size();
         current->value = value;
+        _memory_usage += current->value.size();
         current->is_deleted = is_deleted;
     } else {
         // 抛硬币决定新节点有多高
@@ -55,6 +57,8 @@ void SkipList::Insert(const std::string& key, const std::string& value, bool is_
         }
 
         Node* new_node = new Node(key, value, is_deleted, new_level);
+        _memory_usage += sizeof(Node) + new_level * sizeof(Node*) + key.size() + value.size();
+
         // 循环每一层，把新节点"缝"进去
         for (int i = 0; i < new_level; i++) {
             // 新节点以此为继：右手拉住原来前驱的下家

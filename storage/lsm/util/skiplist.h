@@ -41,10 +41,13 @@ public:
 
     Iterator* NewIterator() const;
     
+    size_t MemoryUsage() const { return _memory_usage; }
+
 private:
     static const int kMaxLevel = 12;
     Node* _head;
     int _level;
+    size_t _memory_usage = 0;
     std::mt19937 _rng;
     std::uniform_int_distribution<> _dist;
 
