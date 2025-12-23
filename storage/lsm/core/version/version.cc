@@ -1,14 +1,23 @@
 #include "version.h"
 #include <algorithm>
 #include <iostream>
+#include <filesystem>
 
 namespace lsm {
+
+namespace fs = std::filesystem;
 
 Version::Version(const std::string& dbname) : _dbname(dbname) {}
 Version::~Version() {}
 
 void Version::AddFile(int level, const FileMetaData& f) {
     _files[level].push_back(f);
+}
+
+void Version::SortL0() {
+    std::sort(_files[0].begin(), _files[0].end(), [](const FileMetaData& a, const FileMetaData& b) {
+        return a.number < b.number;
+    });
 }
 
 std::shared_ptr<Table> Version::GetTable(int file_number) {
@@ -65,6 +74,46 @@ void VersionSet::LogAndApply(Version* edit) {
     Version* old = _current;
     _current = edit;
     delete old;
+}
+
+void VersionSet::Recover() {
+    if (!fs::exists(_dbname)) return;
+
+    int max_file_num = 0;
+
+    for (const auto& entry : fs::directory_iterator(_dbname)) {
+        if (entry.path().extension() == ".sst") {
+            std::string filename = entry.path().filename().string();
+            try {
+                int file_num = std::stoi(filename.substr(0, filename.find('.')));
+                if (file_num > max_file_num) max_file_num = file_num;
+
+                auto table = Table::Open(entry.path().string());
+                if (!table) continue;
+
+                FileMetaData meta;
+                meta.number = file_num;
+                meta.file_size = fs::file_size(entry.path());
+                
+                auto iter = table->NewIterator();
+                iter->SeekToFirst();
+                if (iter->Valid()) {
+                    meta.smallest = iter->Key();
+                    while (iter->Valid()) {
+                        meta.largest = iter->Key();
+                        iter->Next();
+                    }
+                }
+                delete iter;
+                
+                _current->AddFile(0, meta);
+            } catch (...) {
+                continue;
+            }
+        }
+    }
+    _next_file_number = max_file_num + 1;
+    _current->SortL0();
 }
 
 } // namespace lsm
