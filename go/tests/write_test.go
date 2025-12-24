@@ -3,37 +3,49 @@ package tests
 import (
 	"fmt"
 	"geecache"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestWriteStrategies(t *testing.T) {
+	var mu sync.Mutex
 	var db = make(map[string]string)
 	var getter = geecache.GetterFunc(func(key string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		if v, ok := db[key]; ok {
 			return []byte(v), nil
 		}
 		return nil, fmt.Errorf("key not found")
 	})
 	var setter = geecache.SetterFunc(func(key string, value []byte) error {
+		mu.Lock()
+		defer mu.Unlock()
 		db[key] = string(value)
 		return nil
 	})
 
-	g := geecache.NewGroup("write_test", 2<<20, getter)
+	g, err := geecache.NewGroup("write_test", 2<<20, getter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	g.RegisterSetter(setter)
 
 	// Test Write-Through
 	key1 := "key1"
 	val1 := "val1"
-	err := g.Set(key1, []byte(val1), geecache.StrategyWriteThrough)
+	err = g.Set(key1, []byte(val1), geecache.StrategyWriteThrough)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Check DB
-	if db[key1] != val1 {
-		t.Fatalf("Write-Through failed to update DB. got %s, want %s", db[key1], val1)
+	mu.Lock()
+	got1 := db[key1]
+	mu.Unlock()
+	if got1 != val1 {
+		t.Fatalf("Write-Through failed to update DB. got %s, want %s", got1, val1)
 	}
 	// Check Cache
 	if v, err := g.Get(key1); err != nil || string(v.ByteSlice()) != val1 {
@@ -55,7 +67,10 @@ func TestWriteStrategies(t *testing.T) {
 
 	// Wait for async DB update
 	time.Sleep(100 * time.Millisecond)
-	if db[key2] != val2 {
-		t.Fatalf("Write-Back failed to update DB asynchronously. got %s, want %s", db[key2], val2)
+	mu.Lock()
+	got2 := db[key2]
+	mu.Unlock()
+	if got2 != val2 {
+		t.Fatalf("Write-Back failed to update DB asynchronously. got %s, want %s", got2, val2)
 	}
 }

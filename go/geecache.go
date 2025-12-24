@@ -37,6 +37,8 @@ const (
 	StrategyWriteBack
 )
 
+// Group is a cache namespace and associated data loaded spread over
+// a group of 1 or more nodes.
 type Group struct {
 	name         string
 	getter       Getter
@@ -56,11 +58,13 @@ var (
 	groups = make(map[string]*Group)
 )
 
-func (g *Group) RegisterPeers(peers PeerPicker) {
+// RegisterPeers registers a PeerPicker for choosing remote peer.
+func (g *Group) RegisterPeers(peers PeerPicker) error {
 	if g.peers != nil {
-		panic("RegisterPeerPicker called more than once")
+		return fmt.Errorf("RegisterPeerPicker called more than once")
 	}
 	g.peers = peers
+	return nil
 }
 
 func (g *Group) RegisterSetter(setter Setter) {
@@ -108,9 +112,13 @@ func (g *Group) RunCleanup(interval time.Duration) {
 	}()
 }
 
-func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
+// NewGroup creates a new instance of Group.
+// name: unique name of the group.
+// cacheBytes: max bytes of the cache.
+// getter: callback to get data from source if cache miss.
+func NewGroup(name string, cacheBytes int64, getter Getter) (*Group, error) {
 	if getter == nil {
-		panic("nil Getter")
+		return nil, fmt.Errorf("nil Getter")
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -130,7 +138,7 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	groups[name] = g
 	// Start periodic cleanup (Redis style)
 	g.RunCleanup(time.Second * 10)
-	return g
+	return g, nil
 }
 
 func GetGroup(name string) *Group {
@@ -140,6 +148,7 @@ func GetGroup(name string) *Group {
 	return g
 }
 
+// Get value for a key from cache
 func (g *Group) Get(key string) (ByteView, error) {
 	if key == "" {
 		return ByteView{}, fmt.Errorf("key is required")

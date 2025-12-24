@@ -22,7 +22,7 @@ var serverDB = map[string]string{
 }
 
 func createGroup() *geecache.Group {
-	return geecache.NewGroup("scores_server", 2<<10, geecache.GetterFunc(
+	g, _ := geecache.NewGroup("scores_server", 2<<10, geecache.GetterFunc(
 		func(key string) ([]byte, error) {
 			log.Println("[SlowDB] search key", key)
 			if v, ok := serverDB[key]; ok {
@@ -30,12 +30,15 @@ func createGroup() *geecache.Group {
 			}
 			return nil, fmt.Errorf("%s not exist", key)
 		}))
+	return g
 }
 
 func startCacheServer(addr string, addrs []string, gee *geecache.Group) {
 	peers := geecachehttp.NewHTTPPool(addr)
 	peers.Set(addrs...)
-	gee.RegisterPeers(peers)
+	if err := gee.RegisterPeers(peers); err != nil {
+		log.Fatal(err)
+	}
 	log.Println("geecache is running at", addr)
 	// addr[7:] 是为了去掉 "http://"
 	log.Fatal(http.ListenAndServe(addr[7:], peers))

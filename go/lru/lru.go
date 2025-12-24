@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Cache is a LRU cache. It is not safe for concurrent access.
 type Cache struct {
 	maxBytes  int64
 	nbytes    int64
@@ -25,6 +26,7 @@ type Value interface {
 	Len() int
 }
 
+// New is the Constructor of Cache
 func New(maxBytes int64, onEvicted func(string, Value)) *Cache {
 	return &Cache{
 		maxBytes:  maxBytes,
@@ -34,6 +36,7 @@ func New(maxBytes int64, onEvicted func(string, Value)) *Cache {
 	}
 }
 
+// Get look ups a key's value
 func (c *Cache) Get(key string) (value Value, ok bool) {
 	if element, ok := c.cache[key]; ok {
 		kv := element.Value.(*entry)
@@ -71,6 +74,7 @@ func (c *Cache) RemoveOldest() {
 	}
 }
 
+// Add adds a value to the cache.
 func (c *Cache) Add(key string, value Value, ttl time.Duration) {
 	var expireAt time.Time
 	if ttl > 0 {
@@ -106,6 +110,7 @@ func (c *Cache) RemoveExpired(maxKeys int) {
 	}
 }
 
+// Len the number of items in the cache
 func (c *Cache) Len() int {
 	return c.ll.Len()
 }

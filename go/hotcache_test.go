@@ -62,8 +62,13 @@ func TestHotCacheProtection(t *testing.T) {
 	// Use a large enough cache size to ensure shards have capacity
 	// 2<<20 = 2MB. hotCache = 128KB. 256 shards -> 512 bytes per shard.
 	// Key+Value is small, so this should be enough.
-	g := NewGroup("hotCacheTest", 2<<20, getter)
-	g.RegisterPeers(picker)
+	g, err := NewGroup("hotCacheTest", 2<<20, getter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.RegisterPeers(picker); err != nil {
+		t.Fatal(err)
+	}
 
 	// 2. First Request - Should hit the peer
 	v, err := g.Get(key)

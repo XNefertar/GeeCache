@@ -12,14 +12,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestHTTPPool_ServeHTTP(t *testing.T) {
+func TestHTTPPoolServeHTTP(t *testing.T) {
 	db := map[string]string{
 		"Tom":  "630",
 		"Jack": "589",
 	}
 
 	groupName := "scores_test"
-	geecache.NewGroup(groupName, 2<<10, geecache.GetterFunc(
+	_, err := geecache.NewGroup(groupName, 2<<10, geecache.GetterFunc(
 		func(key string) ([]byte, error) {
 			t.Logf("[MockDB] searching key %s", key)
 			if v, ok := db[key]; ok {
@@ -28,6 +28,9 @@ func TestHTTPPool_ServeHTTP(t *testing.T) {
 			return nil, fmt.Errorf("%s not exist", key)
 		},
 	))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	pool := NewHTTPPool("localhost:test")
 

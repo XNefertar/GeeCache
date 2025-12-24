@@ -27,7 +27,10 @@ func TestLSMIntegration(t *testing.T) {
 		return nil, nil
 	})
 
-	g := geecache.NewGroup("lsm_integration", 2<<10, getter)
+	g, err := geecache.NewGroup("lsm_integration", 2<<10, getter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	g.SetCentralCache(lsmStore)
 
 	// 1. Get key1 (Miss L3, Hit DB, Populate L3)
@@ -47,9 +50,12 @@ func TestLSMIntegration(t *testing.T) {
 
 	// 2. Create a new group that shares the same LSM store, but has no DB source
 	// This simulates a restart where L1/L2 are empty, but L3 has data.
-	g2 := geecache.NewGroup("lsm_integration_2", 2<<10, geecache.GetterFunc(func(key string) ([]byte, error) {
+	g2, err := geecache.NewGroup("lsm_integration_2", 2<<10, geecache.GetterFunc(func(key string) ([]byte, error) {
 		return nil, nil // DB miss
 	}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	g2.SetCentralCache(lsmStore)
 
 	v2, err := g2.Get("key1")

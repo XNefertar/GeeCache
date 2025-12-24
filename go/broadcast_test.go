@@ -43,14 +43,19 @@ func TestBroadcastInvalidation(t *testing.T) {
 	peer2 := &mockBroadcastPeer{}
 	picker := &mockBroadcastPicker{peers: []*mockBroadcastPeer{peer1, peer2}}
 
-	g := NewGroup("broadcastTest", 2<<20, GetterFunc(func(key string) ([]byte, error) {
+	g, err := NewGroup("broadcastTest", 2<<20, GetterFunc(func(key string) ([]byte, error) {
 		return []byte("value"), nil
 	}))
-	g.RegisterPeers(picker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.RegisterPeers(picker); err != nil {
+		t.Fatal(err)
+	}
 
 	// 2. Populate Cache
 	key := "key1"
-	_, err := g.Get(key) // Load into cache
+	_, err = g.Get(key) // Load into cache
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}

@@ -24,7 +24,7 @@ func randomString(n int) string {
 
 // 1. 基准测试：底层存储引擎的并发写入 (测试 Sharding 效果)
 // 直接测试 cache 结构体，绕过 Group 和 Singleflight
-func BenchmarkCore_Add_Parallel(b *testing.B) {
+func BenchmarkCoreAddParallel(b *testing.B) {
 	// 初始化分片缓存，分配足够大的内存避免频繁淘汰
 	c := newCache(int64(b.N * ValueSize))
 
@@ -44,7 +44,7 @@ func BenchmarkCore_Add_Parallel(b *testing.B) {
 }
 
 // 2. 基准测试：底层存储引擎的并发读取 (测试 Sharding + RWMutex 效果)
-func BenchmarkCore_Get_Parallel(b *testing.B) {
+func BenchmarkCoreGetParallel(b *testing.B) {
 	c := newCache(int64(1024 * 1024 * 1024)) // 1GB
 	val := ByteView{b: []byte(randomString(ValueSize))}
 
@@ -68,13 +68,13 @@ func BenchmarkCore_Get_Parallel(b *testing.B) {
 
 // 3. 基准测试：Group 层面的完整流程 (Hit 场景)
 // 包含 Singleflight 检查、Group 路由等开销
-func BenchmarkGroup_Get_Hit_Parallel(b *testing.B) {
+func BenchmarkGroupGetHitParallel(b *testing.B) {
 	// 模拟 Getter
 	getter := GetterFunc(func(key string) ([]byte, error) {
 		return []byte(randomString(ValueSize)), nil
 	})
 
-	g := NewGroup("bench_hit", 1024*1024*1024, getter)
+	g, _ := NewGroup("bench_hit", 1024*1024*1024, getter)
 
 	// 预填充
 	keys := make([]string, 10000)
@@ -97,7 +97,7 @@ func BenchmarkGroup_Get_Hit_Parallel(b *testing.B) {
 
 // 4. 基准测试：Group 层面的完整流程 (Miss 场景 - 模拟缓存击穿保护)
 // 这将测试 Singleflight 的合并效果
-func BenchmarkGroup_Get_Miss_Parallel(b *testing.B) {
+func BenchmarkGroupGetMissParallel(b *testing.B) {
 	getter := GetterFunc(func(key string) ([]byte, error) {
 		// 模拟慢查询
 		time.Sleep(time.Millisecond)
@@ -107,7 +107,7 @@ func BenchmarkGroup_Get_Miss_Parallel(b *testing.B) {
 		return nil, fmt.Errorf("no cache")
 	})
 
-	g := NewGroup("bench_miss", 1024*1024*1024, getter)
+	g, _ := NewGroup("bench_miss", 1024*1024*1024, getter)
 
 	key := "hot-key-miss"
 

@@ -27,7 +27,10 @@ func BenchmarkL3_Integration(b *testing.B) {
 	})
 
 	// 设置极小的 L1/L2 缓存 (1KB)，强制请求落到 L3
-	g := geecache.NewGroup("bench_l3", 1024, getter)
+	g, err := geecache.NewGroup("bench_l3", 1024, getter)
+	if err != nil {
+		b.Fatal(err)
+	}
 	g.SetCentralCache(lsm)
 
 	// 预填充 L3

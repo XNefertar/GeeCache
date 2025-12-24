@@ -37,7 +37,10 @@ func TestL3Cache(t *testing.T) {
 		return nil, nil
 	})
 
-	g := geecache.NewGroup("l3_test", 2<<10, getter)
+	g, err := geecache.NewGroup("l3_test", 2<<10, getter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l3 := &MockCentralCache{data: make(map[string][]byte)}
 	g.SetCentralCache(l3)
 

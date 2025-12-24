@@ -20,6 +20,7 @@ const (
 	defaultReplicas = 50
 )
 
+// HTTPPool implements PeerPicker for a pool of HTTP peers.
 type HTTPPool struct {
 	self       string
 	basePath   string
@@ -28,6 +29,7 @@ type HTTPPool struct {
 	httpGetter map[string]*httpGetter
 }
 
+// NewHTTPPool initializes an HTTP pool of peers.
 func NewHTTPPool(self string) *HTTPPool {
 	return &HTTPPool{
 		self:     self,
@@ -39,9 +41,11 @@ func (p *HTTPPool) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.self, fmt.Sprintf(format, v...))
 }
 
+// ServeHTTP handles all http requests
 func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.URL.Path, p.basePath) {
-		panic("HTTPool serving unexpected path: " + r.URL.Path)
+		http.Error(w, "HTTPool serving unexpected path: "+r.URL.Path, http.StatusBadRequest)
+		return
 	}
 	p.Log("%s %s", r.Method, r.URL.Path)
 

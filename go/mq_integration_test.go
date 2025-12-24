@@ -11,11 +11,14 @@ func TestMQIntegration(t *testing.T) {
 	getter := GetterFunc(func(key string) ([]byte, error) {
 		return []byte("value"), nil
 	})
-	g := NewGroup("mq_test", 2<<20, getter)
+	g, err := NewGroup("mq_test", 2<<20, getter)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// 2. Setup MQ
 	q := mq.NewMemoryMQ()
-	err := g.RegisterMQ(q, "mq_test_topic")
+	err = g.RegisterMQ(q, "mq_test_topic")
 	if err != nil {
 		t.Fatalf("failed to register mq: %v", err)
 	}
