@@ -37,6 +37,29 @@ const (
 	StrategyWriteBack
 )
 
+// GroupOptions configures the behavior of a Group.
+type GroupOptions struct {
+	MainCacheTTL time.Duration
+	HotCacheTTL  time.Duration
+}
+
+// GroupOption is a function that configures a GroupOptions.
+type GroupOption func(*GroupOptions)
+
+// WithMainCacheTTL sets the TTL for the main cache (L2).
+func WithMainCacheTTL(ttl time.Duration) GroupOption {
+	return func(o *GroupOptions) {
+		o.MainCacheTTL = ttl
+	}
+}
+
+// WithHotCacheTTL sets the TTL for the hot cache (L1).
+func WithHotCacheTTL(ttl time.Duration) GroupOption {
+	return func(o *GroupOptions) {
+		o.HotCacheTTL = ttl
+	}
+}
+
 // Group is a cache namespace and associated data loaded spread over
 // a group of 1 or more nodes.
 type Group struct {
@@ -49,6 +72,7 @@ type Group struct {
 	peers        PeerPicker
 	loader       *singleflight.Group
 	ttl          time.Duration
+	options      *GroupOptions
 	mq           mq.MessageQueue
 	mqTopic      string
 }
@@ -99,6 +123,9 @@ func (g *Group) SetCentralCache(c CentralCache) {
 
 func (g *Group) SetTTL(ttl time.Duration) {
 	g.ttl = ttl
+	if g.options != nil {
+		g.options.MainCacheTTL = ttl
+	}
 }
 
 func (g *Group) RunCleanup(interval time.Duration) {
@@ -116,7 +143,7 @@ func (g *Group) RunCleanup(interval time.Duration) {
 // name: unique name of the group.
 // cacheBytes: max bytes of the cache.
 // getter: callback to get data from source if cache miss.
-func NewGroup(name string, cacheBytes int64, getter Getter) (*Group, error) {
+func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption) (*Group, error) {
 	if getter == nil {
 		return nil, fmt.Errorf("nil Getter")
 	}
@@ -128,12 +155,22 @@ func NewGroup(name string, cacheBytes int64, getter Getter) (*Group, error) {
 	// Initialize hotCache with 1/8th of the capacity
 	hc := newCache(cacheBytes / 8)
 
+	options := &GroupOptions{
+		MainCacheTTL: 0,
+		HotCacheTTL:  5 * time.Second,
+	}
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	g := &Group{
 		name:      name,
 		getter:    getter,
 		mainCache: *c,
 		hotCache:  *hc,
 		loader:    &singleflight.Group{},
+		options:   options,
+		ttl:       options.MainCacheTTL,
 	}
 	groups[name] = g
 	// Start periodic cleanup (Redis style)
@@ -321,12 +358,11 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 }
 
 func (g *Group) populateCache(key string, value ByteView) {
-	g.mainCache.add(key, value, g.ttl)
+	g.mainCache.add(key, value, g.options.MainCacheTTL)
 }
 
 func (g *Group) populateHotCache(key string, value ByteView) {
 	// Hot Cache TTL: Short (e.g. 10% of main TTL or fixed 5s) to prevent stale data
 	// while protecting against hot key spikes.
-	hotCacheTTL := 5 * time.Second
-	g.hotCache.add(key, value, hotCacheTTL)
+	g.hotCache.add(key, value, g.options.HotCacheTTL)
 }
