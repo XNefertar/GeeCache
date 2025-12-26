@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -42,6 +43,9 @@ func (p *GRPCPool) Set(peers ...string) {
 	defer p.mu.Unlock()
 	p.peers = consistenthash.New(50, nil)
 	p.peers.Add(peers...)
+	for _, getter := range p.grpcGetters {
+		getter.Close()
+	}
 	p.grpcGetters = make(map[string]*grpcGetter, len(peers))
 	for _, peer := range peers {
 		p.grpcGetters[peer] = &grpcGetter{addr: peer}
@@ -88,6 +92,12 @@ func (g *grpcGetter) getConn() (*grpc.ClientConn, error) {
 	return g.conn, nil
 }
 
+func (g *grpcGetter) Close() {
+	if g.conn != nil {
+		g.conn.Close()
+	}
+}
+
 func (g *grpcGetter) Get(in *pb.Request, out *pb.Response) error {
 	conn, err := g.getConn()
 	if err != nil {
@@ -95,7 +105,9 @@ func (g *grpcGetter) Get(in *pb.Request, out *pb.Response) error {
 	}
 
 	client := pb.NewGroupCacheClient(conn)
-	resp, err := client.Get(context.Background(), in)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.Get(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -115,15 +127,15 @@ func (g *grpcGetter) Remove(in *pb.Request) error {
 }
 
 // Run starts the GRPC server
-func (p *GRPCPool) Run() {
+func (p *GRPCPool) Run() error {
 	lis, err := net.Listen("tcp", p.self)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to listen: %v", err)
 	}
 	server := grpc.NewServer()
 	pb.RegisterGroupCacheServer(server, p)
 	// p.Log("rpc server is running at %s", p.self)
-	server.Serve(lis)
+	return server.Serve(lis)
 }
 
 // Get implements GroupCacheServer
