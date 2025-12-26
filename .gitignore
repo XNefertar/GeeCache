@@ -8,8 +8,8 @@
 *.o
 
 # 忽略 C++ 构建目录
-storage/lsm/build/
-storage/lsm/cmake-build-*/
+cpp/lsm/build/
+cpp/lsm/cmake-build-*/
 
 # 忽略测试生成的二进制文件
 *.test
