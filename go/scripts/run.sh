@@ -7,6 +7,9 @@ set -e
 DIR=$(cd "$(dirname "$0")"; pwd)
 echo "Current Directory: $DIR"
 
+# Ensure we are in the go module root
+cd "$DIR/.."
+
 echo "------------------------------------------------"
 echo "1. Formatting code (go fmt)..."
 # 格式化所有代码，保持风格统一
