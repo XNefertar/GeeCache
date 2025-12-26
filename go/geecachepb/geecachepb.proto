@@ -17,4 +17,6 @@ message Response {
 service GroupCache {
   // Get 用于获取缓存数据
   rpc Get(Request) returns (Response);
+  // Remove 用于移除缓存数据
+  rpc Remove(Request) returns (Response);
 }
