@@ -6,3 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add the LSM storage engine
 add_subdirectory(lsm)
+
+# Add the RPC server
+add_subdirectory(server)
+
