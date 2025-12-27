@@ -3,7 +3,7 @@ package tests
 import (
 	"fmt"
 	"geecache"
-	"geecache/geecachehttp"
+	"geecache/geecachegrpc"
 	pb "geecache/geecachepb"
 	"io"
 	"log"
@@ -34,18 +34,18 @@ func createGroup() *geecache.Group {
 }
 
 func startCacheServer(addr string, addrs []string, gee *geecache.Group) {
-	peers := geecachehttp.NewHTTPPool(addr)
+	peers := geecachegrpc.NewGRPCPool(addr)
 	peers.Set(addrs...)
 	if err := gee.RegisterPeers(peers); err != nil {
 		log.Fatal(err)
 	}
 	log.Println("geecache is running at", addr)
-	// addr[7:] 是为了去掉 "http://"
-	log.Fatal(http.ListenAndServe(addr[7:], peers))
+	peers.Run()
 }
 
 func startAPIServer(apiAddr string, gee *geecache.Group) {
-	http.Handle("/api", http.HandlerFunc(
+	mux := http.NewServeMux()
+	mux.Handle("/api", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			key := r.URL.Query().Get("key")
 			view, err := gee.Get(key)
@@ -54,17 +54,19 @@ func startAPIServer(apiAddr string, gee *geecache.Group) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Write(view.ByteSlice())
-
+			// Create a protobuf response to match the test expectation
+			res := &pb.Response{Value: view.ByteSlice()}
+			body, _ := proto.Marshal(res)
+			w.Write(body)
 		}))
 	log.Println("fontend server is running at", apiAddr)
-	log.Fatal(http.ListenAndServe(apiAddr[7:], nil))
+	log.Fatal(http.ListenAndServe(apiAddr[7:], mux))
 }
 
 func TestServer(t *testing.T) {
 	// 1. 固定配置
 	addrMap := map[int]string{
-		8001: "http://localhost:8001", // 我们只测这一个节点
+		8001: "localhost:8001", // 我们只测这一个节点
 	}
 
 	var addrs []string
@@ -78,12 +80,16 @@ func TestServer(t *testing.T) {
 	// 3. 启动缓存服务器 (后台运行)
 	go startCacheServer(addrMap[8001], addrs, gee)
 
+	// 3.5 启动 API 服务器
+	apiAddr := "http://localhost:9999"
+	go startAPIServer(apiAddr, gee)
+
 	// 4. 等待服务器启动
 	time.Sleep(time.Second)
 
 	// 5. 发起请求
 	// 注意：这里的 URL 里的 "scores_server" 必须和 createGroup 里的名字一致
-	targetURL := "http://localhost:8001/_geecache/scores_server/Tom"
+	targetURL := "http://localhost:9999/api?key=Tom"
 
 	t.Logf("发起请求: %s", targetURL)
 	res, err := http.Get(targetURL)
