@@ -129,12 +129,14 @@ private:
                 buffer.erase(buffer.begin(), buffer.begin() + consumed);
 
                 Message resp;
-                resp.header.seq = req.header.seq;
+                resp.seq = req.seq;
+                resp.SetResponse();
                 
                 try {
                     Process(req, resp);
                 } catch (const std::exception& e) {
-                    resp.header.error = e.what();
+                    resp.SetError();
+                    resp.body = e.what();
                 }
 
                 std::vector<char> out;
@@ -145,9 +147,14 @@ private:
     }
 
     void Process(const Message& req, Message& resp) {
-        if (req.header.method == "get") {
+        std::string method;
+        if (req.meta.count("method")) {
+            method = req.meta.at("method");
+        }
+
+        if (method == "get") {
             resp.body = engine_.Get(req.body);
-        } else if (req.header.method == "put") {
+        } else if (method == "put") {
             if (req.body.size() < 4) throw std::runtime_error("Invalid body");
             uint32_t klen;
             memcpy(&klen, req.body.data(), 4);
@@ -156,7 +163,7 @@ private:
             std::string key = req.body.substr(4, klen);
             std::string val = req.body.substr(4 + klen);
             engine_.Put(key, val);
-        } else if (req.header.method == "delete") {
+        } else if (method == "delete") {
             engine_.Delete(req.body);
         } else {
             throw std::runtime_error("Unknown method");

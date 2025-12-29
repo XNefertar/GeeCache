@@ -10,3 +10,6 @@ add_executable(storage_server storage_server.cc)
 target_link_libraries(storage_server PRIVATE lsm pthread)
 target_include_directories(storage_server PRIVATE ../rpc ../lsm/include)
 
+add_executable(simple_client simple_client.cc)
+target_link_libraries(simple_client PRIVATE pthread)
+target_include_directories(simple_client PRIVATE ../rpc)
