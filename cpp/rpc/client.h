@@ -20,8 +20,8 @@ public:
         
         uint64_t seq = seq_++;
         Message req;
-        req.header.seq = seq;
-        req.header.method = method;
+        req.seq = seq;
+        req.meta["method"] = method;
         req.body = args;
 
         std::vector<char> out;
@@ -31,11 +31,6 @@ public:
         }
 
         // Wait for response
-        // We might have buffered data from previous reads if we were async, 
-        // but here we are synchronous and one-at-a-time.
-        // However, we still need a buffer because a read might return partial data 
-        // or more than one message (though unlikely if we wait for reply before sending next).
-        
         while (true) {
             // Check if we have a complete message in buffer
             Message resp;
@@ -45,18 +40,13 @@ public:
                 // Remove consumed bytes
                 buffer_.erase(buffer_.begin(), buffer_.begin() + consumed);
                 
-                if (resp.header.seq == seq) {
-                    if (!resp.header.error.empty()) {
-                        throw std::runtime_error(resp.header.error);
+                if (resp.seq == seq) {
+                    if (resp.IsError()) {
+                        throw std::runtime_error(resp.body); // Error message is in body now
                     }
                     reply = resp.body;
                     return;
                 } else {
-                    // Unexpected sequence number. 
-                    // In a strictly synchronous client, this shouldn't happen unless server is buggy 
-                    // or we have leftover data.
-                    // We'll just ignore it and keep reading? Or throw?
-                    // Throwing is safer for now.
                     throw std::runtime_error("Seq mismatch");
                 }
             } else if (consumed < 0) {

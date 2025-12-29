@@ -77,16 +77,21 @@ private:
                 
                 // Process request
                 Message resp;
-                resp.header.seq = req.header.seq;
-                resp.header.method = req.header.method;
+                resp.seq = req.seq;
+                resp.SetResponse();
+                // Echo method back in metadata if needed, or just rely on seq
+                if (req.meta.count("method")) {
+                    resp.meta["method"] = req.meta["method"];
+                }
 
                 std::string reply_body;
                 std::string error_msg;
+                std::string method_name = req.meta.count("method") ? req.meta["method"] : "";
 
                 Handler handler;
                 {
                     std::lock_guard<std::mutex> lock(mu_);
-                    auto it = handlers_.find(req.header.method);
+                    auto it = handlers_.find(method_name);
                     if (it != handlers_.end()) {
                         handler = it->second;
                     }
@@ -99,11 +104,14 @@ private:
                         error_msg = e.what();
                     }
                 } else {
-                    error_msg = "Method not found: " + req.header.method;
+                    error_msg = "Method not found: " + method_name;
                 }
 
-                resp.header.error = error_msg;
                 resp.body = reply_body;
+                if (!error_msg.empty()) {
+                    resp.SetError();
+                    resp.body = error_msg; // Error in body
+                }
 
                 std::vector<char> out;
                 Codec::Encode(resp, out);

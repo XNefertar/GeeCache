@@ -51,3 +51,12 @@ vendor/
 *.log
 test_db/
 data/
+
+# --- 7. 性能分析 (Performance Analysis) ---
+perf.data
+perf.data.old
+out.perf
+out.collapsed
+*.svg
+stackcollapse-perf.pl
+flamegraph.pl
