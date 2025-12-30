@@ -29,6 +29,17 @@ extern "C" {
     char* lsm_get(lsm_db_t* db, const char* key, size_t keylen, size_t* vallen, char** errptr);
     void lsm_delete(lsm_db_t* db, const char* key, size_t keylen, char** errptr);
 
+    // ======== Batch Operations ========
+    typedef struct {
+        const char* key;
+        size_t key_len;
+        const char* value;
+        size_t val_len;
+    } lsm_batch_entry_t;
+
+    void lsm_batch_put(lsm_db_t* db, const lsm_batch_entry_t* entries, size_t count, char** errptr);
+
+
     // ======== Write Batch for atomic writes ========
     lsm_writebatch_t* lsm_writebatch_create();
     void lsm_writebatch_destroy(lsm_writebatch_t* b);

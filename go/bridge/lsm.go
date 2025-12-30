@@ -5,6 +5,7 @@ package bridge
 // #include "lsm.h"
 // #include <stdlib.h>
 import "C"
+
 import (
 	"errors"
 	"geecache"
@@ -102,3 +103,69 @@ func (s *LSMStore) Close() {
 
 // 确保 LSMStore 实现了 CentralCache 接口
 var _ geecache.CentralCache = (*LSMStore)(nil)
+
+type BatchEntry struct {
+	Key   string
+	Value []byte
+}
+
+func (s *LSMStore) BatchPut(entries []BatchEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// 1. Calculate size
+	structSize := unsafe.Sizeof(C.lsm_batch_entry_t{})
+	dataSize := 0
+	for _, e := range entries {
+		dataSize += len(e.Key) + len(e.Value)
+	}
+
+	totalSize := C.size_t(int(structSize)*len(entries) + dataSize)
+
+	// 2. Allocate C memory
+	block := C.malloc(totalSize)
+	defer C.free(block)
+
+	// 3. Fill data
+	// The block starts with the array of structs.
+	// The data follows immediately after.
+	cEntries := (*[1 << 30]C.lsm_batch_entry_t)(block)[:len(entries):len(entries)]
+
+	// Pointer to the data area
+	dataPtr := uintptr(block) + uintptr(structSize)*uintptr(len(entries))
+
+	for i, e := range entries {
+		// Set Key
+		cEntries[i].key = (*C.char)(unsafe.Pointer(dataPtr))
+		cEntries[i].key_len = C.size_t(len(e.Key))
+
+		// Copy Key data
+		if len(e.Key) > 0 {
+			target := unsafe.Slice((*byte)(unsafe.Pointer(dataPtr)), len(e.Key))
+			copy(target, e.Key)
+			dataPtr += uintptr(len(e.Key))
+		}
+
+		// Set Value
+		cEntries[i].value = (*C.char)(unsafe.Pointer(dataPtr))
+		cEntries[i].val_len = C.size_t(len(e.Value))
+
+		// Copy Value data
+		if len(e.Value) > 0 {
+			target := unsafe.Slice((*byte)(unsafe.Pointer(dataPtr)), len(e.Value))
+			copy(target, e.Value)
+			dataPtr += uintptr(len(e.Value))
+		}
+	}
+
+	// 4. Call
+	var cErr *C.char
+	C.lsm_batch_put(s.db, (*C.lsm_batch_entry_t)(block), C.size_t(len(entries)), &cErr)
+
+	if cErr != nil {
+		defer C.lsm_free(unsafe.Pointer(cErr))
+		return errors.New(C.GoString(cErr))
+	}
+	return nil
+}

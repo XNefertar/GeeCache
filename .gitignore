@@ -49,6 +49,10 @@ vendor/
 
 # --- 6. 运行时数据和日志 (Runtime Data & Logs) ---
 *.log
+*.prof
+*.pprof
+
+*.log
 test_db/
 data/
 

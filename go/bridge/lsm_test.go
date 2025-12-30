@@ -76,3 +76,33 @@ func TestLSMPersistence(t *testing.T) {
 		t.Errorf("Get got %s, want %s", got, value)
 	}
 }
+
+func TestBatchPut(t *testing.T) {
+	path := "/tmp/test_lsm_batch"
+	os.RemoveAll(path)
+	store, err := NewLSMStore(path)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	entries := []BatchEntry{
+		{"k1", []byte("v1")},
+		{"k2", []byte("v2")},
+		{"k3", []byte("v3")},
+	}
+
+	if err := store.BatchPut(entries); err != nil {
+		t.Fatalf("BatchPut failed: %v", err)
+	}
+
+	for _, e := range entries {
+		got, err := store.Get(e.Key)
+		if err != nil {
+			t.Errorf("Get %s failed: %v", e.Key, err)
+		}
+		if string(got) != string(e.Value) {
+			t.Errorf("Get %s got %s, want %s", e.Key, got, e.Value)
+		}
+	}
+}
