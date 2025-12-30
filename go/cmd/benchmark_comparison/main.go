@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -113,8 +114,20 @@ func (s *BadgerStore) Name() string { return "BadgerDB" }
 
 // --- Benchmark Logic ---
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+
 func main() {
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
 	fmt.Printf("Benchmark Config: Keys=%d, ValSize=%dB, Concurrency=%d, RandomRead=%v\n",
 		*numKeys, *valueSize, *concurrency, *isRandom)
 	fmt.Println("-----------------------------------------------------------------------")
