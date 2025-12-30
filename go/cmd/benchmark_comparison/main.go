@@ -1,148 +1,223 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"geecache/bridge"
 	"log"
+	"math/rand"
 	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-const (
-	numOps    = 100000
-	valueSize = 100
-	keyPrefix = "key_"
+// Configuration flags
+var (
+	numKeys     = flag.Int("keys", 100000, "Total number of keys")
+	valueSize   = flag.Int("valsize", 100, "Value size in bytes")
+	concurrency = flag.Int("c", 1, "Number of concurrent goroutines")
+	engine      = flag.String("engine", "all", "Engine to test: all, geecache, leveldb, badger")
+	isRandom    = flag.Bool("random", false, "Use random key access pattern for reads")
 )
 
-func main() {
-	fmt.Printf("Starting Benchmark Comparison (Ops: %d, ValueSize: %dB)\n", numOps, valueSize)
-	fmt.Println("------------------------------------------------")
-
-	// 1. GeeCache LSM (C++ Bridge)
-	runGeeCacheLSM()
-
-	// 2. GoLevelDB
-	runGoLevelDB()
-
-	// 3. BadgerDB
-	runBadgerDB()
+// Store interface for unified benchmarking
+type Store interface {
+	Set(key string, value []byte) error
+	Get(key string) ([]byte, error)
+	Close()
+	Name() string
 }
 
-func runGeeCacheLSM() {
-	dir := "/tmp/bench_geecache_lsm"
-	os.RemoveAll(dir)
-	defer os.RemoveAll(dir)
+// --- GeeCache Wrapper ---
+type GeeCacheStore struct {
+	store *bridge.LSMStore
+	dir   string
+}
 
-	store, err := bridge.NewLSMStore(dir)
+func NewGeeCacheStore(dir string) (*GeeCacheStore, error) {
+	s, err := bridge.NewLSMStore(dir)
 	if err != nil {
-		log.Fatalf("Failed to open GeeCache LSM: %v", err)
+		return nil, err
+	}
+	return &GeeCacheStore{store: s, dir: dir}, nil
+}
+func (s *GeeCacheStore) Set(k string, v []byte) error { return s.store.Set(k, v) }
+func (s *GeeCacheStore) Get(k string) ([]byte, error) { return s.store.Get(k) }
+func (s *GeeCacheStore) Close()                       { s.store.Close(); os.RemoveAll(s.dir) }
+func (s *GeeCacheStore) Name() string                 { return "GeeCache LSM" }
+
+// --- LevelDB Wrapper ---
+type LevelDBStore struct {
+	db  *leveldb.DB
+	dir string
+}
+
+func NewLevelDBStore(dir string) (*LevelDBStore, error) {
+	db, err := leveldb.OpenFile(dir, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &LevelDBStore{db: db, dir: dir}, nil
+}
+func (s *LevelDBStore) Set(k string, v []byte) error { return s.db.Put([]byte(k), v, nil) }
+func (s *LevelDBStore) Get(k string) ([]byte, error) {
+	_, err := s.db.Get([]byte(k), nil)
+	return nil, err
+}
+func (s *LevelDBStore) Close()       { s.db.Close(); os.RemoveAll(s.dir) }
+func (s *LevelDBStore) Name() string { return "GoLevelDB" }
+
+// --- BadgerDB Wrapper ---
+type BadgerStore struct {
+	db  *badger.DB
+	dir string
+}
+
+func NewBadgerStore(dir string) (*BadgerStore, error) {
+	opts := badger.DefaultOptions(dir)
+	opts.Logger = nil
+	opts.SyncWrites = false // Fair comparison with async LSM
+	db, err := badger.Open(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &BadgerStore{db: db, dir: dir}, nil
+}
+func (s *BadgerStore) Set(k string, v []byte) error {
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Set([]byte(k), v)
+	})
+}
+func (s *BadgerStore) Get(k string) ([]byte, error) {
+	var val []byte
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(k))
+		if err != nil {
+			return err
+		}
+		return item.Value(func(v []byte) error {
+			val = v // Copy value
+			return nil
+		})
+	})
+	return val, err
+}
+func (s *BadgerStore) Close()       { s.db.Close(); os.RemoveAll(s.dir) }
+func (s *BadgerStore) Name() string { return "BadgerDB" }
+
+// --- Benchmark Logic ---
+
+func main() {
+	flag.Parse()
+	fmt.Printf("Benchmark Config: Keys=%d, ValSize=%dB, Concurrency=%d, RandomRead=%v\n",
+		*numKeys, *valueSize, *concurrency, *isRandom)
+	fmt.Println("-----------------------------------------------------------------------")
+	fmt.Printf("%-15s | %-10s | %-10s | %-10s | %-10s | %-10s\n",
+		"Engine", "Phase", "OPS/sec", "P50(us)", "P99(us)", "P99.9(us)")
+	fmt.Println("-----------------------------------------------------------------------")
+
+	engines := []string{}
+	if *engine == "all" {
+		engines = []string{"geecache", "leveldb", "badger"}
+	} else {
+		engines = []string{*engine}
+	}
+
+	for _, e := range engines {
+		runBenchmarkForEngine(e)
+	}
+}
+
+func runBenchmarkForEngine(engineName string) {
+	var store Store
+	var err error
+	dir := filepath.Join(os.TempDir(), "bench_"+engineName+"_"+fmt.Sprint(time.Now().UnixNano()))
+	os.RemoveAll(dir)
+
+	switch engineName {
+	case "geecache":
+		store, err = NewGeeCacheStore(dir)
+	case "leveldb":
+		store, err = NewLevelDBStore(dir)
+	case "badger":
+		store, err = NewBadgerStore(dir)
+	default:
+		log.Fatalf("Unknown engine: %s", engineName)
+	}
+
+	if err != nil {
+		log.Fatalf("Failed to init %s: %v", engineName, err)
 	}
 	defer store.Close()
 
-	fmt.Println("Running GeeCache LSM Benchmark...")
-	start := time.Now()
-	val := make([]byte, valueSize)
-	for i := 0; i < numOps; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
-		if err := store.Set(key, val); err != nil {
-			log.Fatalf("GeeCache Set failed: %v", err)
-		}
-	}
-	duration := time.Since(start)
-	fmt.Printf("  Write: %v, %.2f ops/sec\n", duration, float64(numOps)/duration.Seconds())
+	// 1. Write Phase
+	runPhase(store, "Write", func(i int) error {
+		key := fmt.Sprintf("key_%09d", i)
+		val := make([]byte, *valueSize)
+		return store.Set(key, val)
+	})
 
-	start = time.Now()
-	for i := 0; i < numOps; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
-		if _, err := store.Get(key); err != nil {
-			log.Fatalf("GeeCache Get failed: %v", err)
+	// 2. Read Phase
+	runPhase(store, "Read", func(i int) error {
+		kIdx := i
+		if *isRandom {
+			kIdx = rand.Intn(*numKeys)
 		}
-	}
-	duration = time.Since(start)
-	fmt.Printf("  Read:  %v, %.2f ops/sec\n", duration, float64(numOps)/duration.Seconds())
-	fmt.Println("------------------------------------------------")
+		key := fmt.Sprintf("key_%09d", kIdx)
+		_, err := store.Get(key)
+		return err
+	})
 }
 
-func runGoLevelDB() {
-	dir := "/tmp/bench_goleveldb"
-	os.RemoveAll(dir)
-	defer os.RemoveAll(dir)
-
-	db, err := leveldb.OpenFile(dir, nil)
-	if err != nil {
-		log.Fatalf("Failed to open GoLevelDB: %v", err)
-	}
-	defer db.Close()
-
-	fmt.Println("Running GoLevelDB Benchmark...")
+func runPhase(store Store, phase string, op func(int) error) {
+	var wg sync.WaitGroup
+	latencies := make([]int64, *numKeys) // Store latency in microseconds
 	start := time.Now()
-	val := make([]byte, valueSize)
-	for i := 0; i < numOps; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
-		if err := db.Put([]byte(key), val, nil); err != nil {
-			log.Fatalf("GoLevelDB Put failed: %v", err)
-		}
+
+	opsPerThread := *numKeys / *concurrency
+
+	// Progress counter
+	var completedOps int64
+
+	for i := 0; i < *concurrency; i++ {
+		wg.Add(1)
+		go func(threadID int) {
+			defer wg.Done()
+			base := threadID * opsPerThread
+			for j := 0; j < opsPerThread; j++ {
+				idx := base + j
+				t0 := time.Now()
+				if err := op(idx); err != nil {
+					// Ignore not found errors in random read
+					if phase == "Write" {
+						log.Printf("Error in %s: %v", phase, err)
+					}
+				}
+				lat := time.Since(t0).Microseconds()
+				if idx < len(latencies) {
+					latencies[idx] = lat
+				}
+				atomic.AddInt64(&completedOps, 1)
+			}
+		}(i)
 	}
+
+	wg.Wait()
 	duration := time.Since(start)
-	fmt.Printf("  Write: %v, %.2f ops/sec\n", duration, float64(numOps)/duration.Seconds())
+	ops := float64(*numKeys) / duration.Seconds()
 
-	start = time.Now()
-	for i := 0; i < numOps; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
-		if _, err := db.Get([]byte(key), nil); err != nil {
-			log.Fatalf("GoLevelDB Get failed: %v", err)
-		}
-	}
-	duration = time.Since(start)
-	fmt.Printf("  Read:  %v, %.2f ops/sec\n", duration, float64(numOps)/duration.Seconds())
-	fmt.Println("------------------------------------------------")
-}
+	// Calculate Percentiles
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	p50 := latencies[int(float64(len(latencies))*0.50)]
+	p99 := latencies[int(float64(len(latencies))*0.99)]
+	p999 := latencies[int(float64(len(latencies))*0.999)]
 
-func runBadgerDB() {
-	dir := "/tmp/bench_badger"
-	os.RemoveAll(dir)
-	defer os.RemoveAll(dir)
-
-	opts := badger.DefaultOptions(dir)
-	opts.Logger = nil       // Disable logging
-	opts.SyncWrites = false // Disable sync for fair comparison
-	db, err := badger.Open(opts)
-	if err != nil {
-		log.Fatalf("Failed to open BadgerDB: %v", err)
-	}
-	defer db.Close()
-
-	fmt.Println("Running BadgerDB Benchmark...")
-	start := time.Now()
-	val := make([]byte, valueSize)
-
-	for i := 0; i < numOps; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
-		err := db.Update(func(txn *badger.Txn) error {
-			return txn.Set([]byte(key), val)
-		})
-		if err != nil {
-			log.Fatalf("BadgerDB Set failed: %v", err)
-		}
-	}
-	duration := time.Since(start)
-	fmt.Printf("  Write: %v, %.2f ops/sec\n", duration, float64(numOps)/duration.Seconds())
-
-	start = time.Now()
-	for i := 0; i < numOps; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
-		err := db.View(func(txn *badger.Txn) error {
-			_, err := txn.Get([]byte(key))
-			return err
-		})
-		if err != nil {
-			log.Fatalf("BadgerDB Get failed: %v", err)
-		}
-	}
-	duration = time.Since(start)
-	fmt.Printf("  Read:  %v, %.2f ops/sec\n", duration, float64(numOps)/duration.Seconds())
-	fmt.Println("------------------------------------------------")
+	fmt.Printf("%-15s | %-10s | %-10.0f | %-10d | %-10d | %-10d\n",
+		store.Name(), phase, ops, p50, p99, p999)
 }
