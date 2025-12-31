@@ -23,8 +23,9 @@ var (
 	numKeys     = flag.Int("keys", 100000, "Total number of keys")
 	valueSize   = flag.Int("valsize", 100, "Value size in bytes")
 	concurrency = flag.Int("c", 1, "Number of concurrent goroutines")
-	engine      = flag.String("engine", "all", "Engine to test: all, geecache, leveldb, badger")
+	engine      = flag.String("engine", "all", "Engine to test: all, geecache, geecache_batch, leveldb, badger")
 	isRandom    = flag.Bool("random", false, "Use random key access pattern for reads")
+	batchSize   = flag.Int("batch", 1000, "Batch size for geecache_batch")
 )
 
 // Store interface for unified benchmarking
@@ -35,7 +36,61 @@ type Store interface {
 	Name() string
 }
 
+// --- GeeCache Batch Wrapper ---
+type GeeCacheBatchStore struct {
+	store    *bridge.LSMStore
+	dir      string
+	batchBuf []bridge.BatchEntry
+	mu       sync.Mutex
+}
+
+func NewGeeCacheBatchStore(dir string) (*GeeCacheBatchStore, error) {
+	s, err := bridge.NewLSMStore(dir)
+	if err != nil {
+		return nil, err
+	}
+	return &GeeCacheBatchStore{store: s, dir: dir, batchBuf: make([]bridge.BatchEntry, 0, *batchSize)}, nil
+}
+
+func (s *GeeCacheBatchStore) Set(k string, v []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Copy value to avoid race conditions if caller reuses buffer
+	valCopy := make([]byte, len(v))
+	copy(valCopy, v)
+
+	s.batchBuf = append(s.batchBuf, bridge.BatchEntry{Key: k, Value: valCopy})
+
+	if len(s.batchBuf) >= *batchSize {
+		err := s.store.BatchPut(s.batchBuf)
+		s.batchBuf = s.batchBuf[:0] // Reset buffer
+		return err
+	}
+	return nil
+}
+
+func (s *GeeCacheBatchStore) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.batchBuf) > 0 {
+		err := s.store.BatchPut(s.batchBuf)
+		s.batchBuf = s.batchBuf[:0]
+		return err
+	}
+	return nil
+}
+
+func (s *GeeCacheBatchStore) Get(k string) ([]byte, error) { return s.store.Get(k) }
+func (s *GeeCacheBatchStore) Close() {
+	s.Flush()
+	s.store.Close()
+	os.RemoveAll(s.dir)
+}
+func (s *GeeCacheBatchStore) Name() string { return fmt.Sprintf("GeeCache Batch(%d)", *batchSize) }
+
 // --- GeeCache Wrapper ---
+
 type GeeCacheStore struct {
 	store *bridge.LSMStore
 	dir   string
@@ -137,7 +192,7 @@ func main() {
 
 	engines := []string{}
 	if *engine == "all" {
-		engines = []string{"geecache", "leveldb", "badger"}
+		engines = []string{"geecache", "geecache_batch", "leveldb", "badger"}
 	} else {
 		engines = []string{*engine}
 	}
@@ -156,6 +211,8 @@ func runBenchmarkForEngine(engineName string) {
 	switch engineName {
 	case "geecache":
 		store, err = NewGeeCacheStore(dir)
+	case "geecache_batch":
+		store, err = NewGeeCacheBatchStore(dir)
 	case "leveldb":
 		store, err = NewLevelDBStore(dir)
 	case "badger":

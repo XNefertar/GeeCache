@@ -91,7 +91,20 @@ extern "C" {
         }
     }
 
+    void lsm_batch_put(lsm_db_t* db, const lsm_batch_entry_t* entries, size_t count, char** errptr) {
+        try {
+            for (size_t i = 0; i < count; ++i) {
+                db->rep->Put(std::string(entries[i].key, entries[i].key_len), 
+                             std::string(entries[i].value, entries[i].val_len));
+            }
+            if (errptr) *errptr = nullptr;
+        } catch (const std::exception& e) {
+            set_error(errptr, e.what());
+        }
+    }
+
     void lsm_free(void* ptr) {
+
         free(ptr);
     }
 
