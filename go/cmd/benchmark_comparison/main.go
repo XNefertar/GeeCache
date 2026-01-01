@@ -137,7 +137,6 @@ func NewLevelDBStore(dir string) (*LevelDBStore, error) {
 	}
 	return &LevelDBStore{db: db, dir: dir}, nil
 }
-
 func (s *LevelDBStore) Set(k string, v []byte) error { return s.db.Put([]byte(k), v, nil) }
 func (s *LevelDBStore) Get(k string) ([]byte, error) {
 	_, err := s.db.Get([]byte(k), nil)
@@ -171,13 +170,11 @@ func NewBadgerStore(dir string) (*BadgerStore, error) {
 	}
 	return &BadgerStore{db: db, dir: dir}, nil
 }
-
 func (s *BadgerStore) Set(k string, v []byte) error {
 	return s.db.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(k), v)
 	})
 }
-
 func (s *BadgerStore) Get(k string) ([]byte, error) {
 	var val []byte
 	err := s.db.View(func(txn *badger.Txn) error {
