@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <filesystem>
+#include <chrono>
 
 namespace lsm {
 
@@ -18,6 +19,26 @@ void Version::SortL0() {
     std::sort(_files[0].begin(), _files[0].end(), [](const FileMetaData& a, const FileMetaData& b) {
         return a.number < b.number;
     });
+
+    // Build index
+    _files_by_key.clear();
+    for (const auto& f : _files[0]) {
+        _files_by_key.push_back(&f);
+    }
+    std::sort(_files_by_key.begin(), _files_by_key.end(), [](const FileMetaData* a, const FileMetaData* b) {
+        return a->smallest < b->smallest;
+    });
+    
+    // Check disjointness
+    _l0_disjoint = true;
+    if (!_files_by_key.empty()) {
+        for (size_t i = 0; i < _files_by_key.size() - 1; ++i) {
+            if (_files_by_key[i]->largest >= _files_by_key[i+1]->smallest) {
+                _l0_disjoint = false;
+                break;
+            }
+        }
+    }
 }
 
 std::shared_ptr<Table> Version::GetTable(int file_number) {
@@ -37,6 +58,25 @@ std::shared_ptr<Table> Version::GetTable(int file_number) {
 }
 
 int Version::Get(const std::string& key, std::string* value) {
+    // Fast path for disjoint files
+    if (_l0_disjoint) {
+        auto it = std::upper_bound(_files_by_key.begin(), _files_by_key.end(), key, 
+            [](const std::string& k, const FileMetaData* f) {
+                return k < f->smallest;
+            });
+            
+        if (it != _files_by_key.begin()) {
+            const FileMetaData* f = *(--it);
+            if (key <= f->largest) {
+                std::shared_ptr<Table> table = GetTable(f->number);
+                if (table) {
+                    return table->Get(key, value);
+                }
+            }
+        }
+        return 0;
+    }
+
     // Search L0 files in reverse order (newest first)
     // L0 files can overlap, so we must check all of them that might contain the key
     for (auto it = _files[0].rbegin(); it != _files[0].rend(); ++it) {

@@ -3,10 +3,12 @@
 #include <vector>
 #include <fstream>
 #include <cstdint>
+#include "util/bloom_filter.h"
 
 namespace lsm {
 
 struct BlockHandle {
+
     uint64_t offset;
     uint64_t size;
 };
@@ -30,10 +32,17 @@ private:
     struct IndexEntry {
         std::string key;
         uint64_t offset;
+        uint64_t size;
     };
     std::vector<IndexEntry> _index;
+    std::vector<std::string> _keys; // For Bloom Filter
     
+    std::string _current_block;
+    std::string _last_key;
+    
+    void FlushBlock();
     void FlushIndex();
 };
+
 
 } // namespace lsm

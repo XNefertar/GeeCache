@@ -39,6 +39,17 @@ extern "C" {
 
     void lsm_batch_put(lsm_db_t* db, const lsm_batch_entry_t* entries, size_t count, char** errptr);
 
+    typedef struct {
+        const char* key;
+        size_t key_len;
+        char* value;      // Output: allocated by callee, must be freed by caller
+        size_t val_len;   // Output
+        int found;        // Output: 1 if found, 0 otherwise
+        char* error;      // Output: NULL if success
+    } lsm_batch_get_entry_t;
+
+    void lsm_batch_get(lsm_db_t* db, lsm_batch_get_entry_t* entries, size_t count);
+
 
     // ======== Write Batch for atomic writes ========
     lsm_writebatch_t* lsm_writebatch_create();
