@@ -39,8 +39,8 @@ extern "C" {
 
     void lsm_batch_put(lsm_db_t* db, const lsm_batch_entry_t* entries, size_t count, char** errptr);
 
-
     // ======== Write Batch for atomic writes ========
+
     lsm_writebatch_t* lsm_writebatch_create();
     void lsm_writebatch_destroy(lsm_writebatch_t* b);
     void lsm_writebatch_put(lsm_writebatch_t* b, const char* key, size_t keylen, const char* val, size_t vallen);
