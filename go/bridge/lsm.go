@@ -5,6 +5,7 @@ package bridge
 // #include "lsm.h"
 // #include <stdlib.h>
 import "C"
+
 import (
 	"errors"
 	"geecache"

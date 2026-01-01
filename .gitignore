@@ -64,3 +64,10 @@ out.collapsed
 *.svg
 stackcollapse-perf.pl
 flamegraph.pl
+
+# --- 8. 临时文件 (Temporary Files) ---
+*.patch
+go/bench_main
+
+# --- 9. VS Code Counter 文件(VS Code Counter Files) ---
+.VSCodeCounter/
