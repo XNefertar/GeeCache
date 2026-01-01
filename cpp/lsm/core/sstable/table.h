@@ -11,6 +11,13 @@ class Table {
     
 
 public:
+
+    enum Status {
+        kNotFound = 0,
+        kFound = 1,
+        kDeleted = 2
+    };
+
     static std::shared_ptr<Table> Open(const std::string& file_path);
     ~Table(); // Need destructor to unmap
     
@@ -18,7 +25,7 @@ public:
     // If deleted, returns true but value is empty (or we need a way to signal deletion).
     // Let's change signature: 
     // Result: 0 = Not Found, 1 = Found, 2 = Deleted
-    int Get(const std::string& key, std::string* value);
+    Status Get(const std::string& key, std::string* value);
 
     class Iterator {
     public:

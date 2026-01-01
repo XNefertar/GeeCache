@@ -11,7 +11,6 @@
 
 namespace lsm {
 
-
 std::shared_ptr<Table> Table::Open(const std::string& file_path) {
     auto table = std::shared_ptr<Table>(new Table(file_path));
     if (table->LoadIndex()) {
@@ -88,10 +87,10 @@ bool Table::LoadIndex() {
     return true;
 }
 
-int Table::Get(const std::string& key, std::string* value) {
+Table::Status Table::Get(const std::string& key, std::string* value) {
     // Check Bloom Filter first
     if (!_filter_data.empty() && !_filter_policy.KeyMayMatch(key, _filter_data)) {
-        return 0; // Definitely not found
+        return ; // Definitely not found
     }
 
     // Binary search in index
@@ -101,7 +100,7 @@ int Table::Get(const std::string& key, std::string* value) {
         });
 
     if (it == _index.end()) {
-        return 0;
+        return kNotFound;
     }
 
     // Read Block (Directly from mmap)
@@ -131,8 +130,8 @@ int Table::Get(const std::string& key, std::string* value) {
             uint8_t type;
             memcpy(&type, data, sizeof(type));
             
-            if (type == 1) return 2; // Deleted
-            return 1; // Found
+            if (type == 1) return kDeleted; // Deleted
+            return kFound; // Found
         }
         
         // Skip key
@@ -148,7 +147,7 @@ int Table::Get(const std::string& key, std::string* value) {
         data += 1;
     }
     
-    return 0; // Not found
+    return kNotFound; // Not found
 }
 
 
