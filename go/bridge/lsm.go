@@ -196,7 +196,7 @@ func (s *LSMStore) BatchGet(keys []string) ([]BatchGetEntry, error) {
 	block := C.malloc(totalSize)
 	defer C.free(block)
 
-	cEntries := (*[1 << 30]C.lsm_batch_get_entry_t)(block)[:count:count]
+	cEntries := unsafe.Slice((*C.lsm_batch_get_entry_t)(block), count)
 	dataPtr := uintptr(block) + uintptr(structSize)*uintptr(count)
 
 	for i, k := range keys {
