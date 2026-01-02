@@ -1,6 +1,13 @@
 #include "table.h"
 #include <iostream>
 #include <algorithm>
+#include <cstring>
+#include <atomic>
+#include <chrono>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace lsm {
 
@@ -13,68 +20,136 @@ std::shared_ptr<Table> Table::Open(const std::string& file_path) {
 }
 
 Table::Table(const std::string& file_path) : _file_path(file_path) {
-    _file.open(file_path, std::ios::binary | std::ios::ate);
-    _file_size = _file.tellg();
+    _fd = open(file_path.c_str(), O_RDONLY);
+    if (_fd != -1) {
+        struct stat sb;
+        if (fstat(_fd, &sb) != -1) {
+            _file_size = sb.st_size;
+            _mapped_data = (char*)mmap(nullptr, _file_size, PROT_READ, MAP_PRIVATE, _fd, 0);
+            if (_mapped_data == MAP_FAILED) {
+                _mapped_data = nullptr;
+                _file_size = 0;
+            }
+        }
+    }
+}
+
+Table::~Table() {
+    if (_mapped_data) {
+        munmap(_mapped_data, _file_size);
+    }
+    if (_fd != -1) {
+        close(_fd);
+    }
 }
 
 bool Table::LoadIndex() {
-    if (!_file.is_open() || _file_size < 8) return false;
+    if (!_mapped_data || _file_size < 24) return false;
 
-    // Read Footer
-    _file.seekg(_file_size - 8);
-    _file.read(reinterpret_cast<char*>(&_index_offset), 8);
+    // Read Footer (24 bytes)
+    // _file.seekg(_file_size - 24);
+    const char* footer = _mapped_data + _file_size - 24;
+    
+    uint64_t filter_offset, filter_size;
+    memcpy(&_index_offset, footer, 8);
+    memcpy(&filter_offset, footer + 8, 8);
+    memcpy(&filter_size, footer + 16, 8);
 
     if (_index_offset >= _file_size) return false;
 
+    // Read Bloom Filter
+    if (filter_size > 0) {
+        _filter_data.assign(_mapped_data + filter_offset, filter_size);
+    }
+
     // Read Index
-    _file.seekg(_index_offset);
+    const char* index_ptr = _mapped_data + _index_offset;
     uint32_t index_size;
-    _file.read(reinterpret_cast<char*>(&index_size), sizeof(index_size));
+    memcpy(&index_size, index_ptr, sizeof(index_size));
+    index_ptr += sizeof(index_size);
 
     for (uint32_t i = 0; i < index_size; ++i) {
         uint32_t klen;
-        _file.read(reinterpret_cast<char*>(&klen), sizeof(klen));
-        std::string key(klen, '\0');
-        _file.read(&key[0], klen);
-        uint64_t offset;
-        _file.read(reinterpret_cast<char*>(&offset), sizeof(offset));
+        memcpy(&klen, index_ptr, sizeof(klen));
+        index_ptr += sizeof(klen);
         
-        _index.push_back({key, offset});
+        std::string key(index_ptr, klen);
+        index_ptr += klen;
+        
+        uint64_t offset, size;
+        memcpy(&offset, index_ptr, sizeof(offset));
+        index_ptr += sizeof(offset);
+        memcpy(&size, index_ptr, sizeof(size));
+        index_ptr += sizeof(size);
+        
+        _index.push_back({key, offset, size});
     }
     return true;
 }
 
-int Table::Get(const std::string& key, std::string* value) {
+Table::Status Table::Get(const std::string& key, std::string* value) {
+    // Check Bloom Filter first
+    if (!_filter_data.empty() && !_filter_policy.KeyMayMatch(key, _filter_data)) {
+        return ; // Definitely not found
+    }
+
     // Binary search in index
     auto it = std::lower_bound(_index.begin(), _index.end(), key, 
         [](const IndexEntry& entry, const std::string& k) {
             return entry.key < k;
         });
 
-    if (it != _index.end() && it->key == key) {
-        // Found exact match in index (since we index every key in this simple version)
-        // Read from file
-        _file.seekg(it->offset);
+    if (it == _index.end()) {
+        return kNotFound;
+    }
+
+    // Read Block (Directly from mmap)
+    const char* block_data = _mapped_data + it->offset;
+    size_t block_size = it->size;
+    
+    // Scan Block
+    const char* data = block_data;
+    const char* end = data + block_size;
+    
+    while (data < end) {
+        uint32_t klen;
+        memcpy(&klen, data, sizeof(klen));
+        data += sizeof(klen);
         
-        uint32_t klen, vlen;
-        uint8_t type;
+        // Optimization: Compare key without allocation
+        if (klen == key.size() && memcmp(data, key.data(), klen) == 0) {
+            data += klen; // Skip key
+            
+            uint32_t vlen;
+            memcpy(&vlen, data, sizeof(vlen));
+            data += sizeof(vlen);
+            
+            *value = std::string(data, vlen);
+            data += vlen;
+            
+            uint8_t type;
+            memcpy(&type, data, sizeof(type));
+            
+            if (type == 1) return kDeleted; // Deleted
+            return kFound; // Found
+        }
         
-        _file.read(reinterpret_cast<char*>(&klen), sizeof(klen));
-        _file.seekg(klen, std::ios::cur); // Skip key
+        // Skip key
+        data += klen;
         
-        _file.read(reinterpret_cast<char*>(&vlen), sizeof(vlen));
-        std::string val(vlen, '\0');
-        _file.read(&val[0], vlen);
+        // Skip value
+        uint32_t vlen;
+        memcpy(&vlen, data, sizeof(vlen));
+        data += sizeof(vlen);
+        data += vlen;
         
-        _file.read(reinterpret_cast<char*>(&type), sizeof(type));
-        
-        if (type == 1) return 2; // Deleted
-        *value = val;
-        return 1; // Found
+        // Skip type
+        data += 1;
     }
     
-    return 0; // Not found
+    return kNotFound; // Not found
 }
+
 
 Table::Iterator* Table::NewIterator() {
     return new Iterator(this);
@@ -131,20 +206,24 @@ void Table::Iterator::ParseCurrent() {
         return;
     }
     
-    _table->_file.seekg(_current_offset);
+    const char* ptr = _table->_mapped_data + _current_offset;
     
     uint32_t klen;
-    _table->_file.read(reinterpret_cast<char*>(&klen), sizeof(klen));
-    _key.resize(klen);
-    _table->_file.read(&_key[0], klen);
+    memcpy(&klen, ptr, sizeof(klen));
+    ptr += sizeof(klen);
+    
+    _key.assign(ptr, klen);
+    ptr += klen;
     
     uint32_t vlen;
-    _table->_file.read(reinterpret_cast<char*>(&vlen), sizeof(vlen));
-    _value.resize(vlen);
-    _table->_file.read(&_value[0], vlen);
+    memcpy(&vlen, ptr, sizeof(vlen));
+    ptr += sizeof(vlen);
+    
+    _value.assign(ptr, vlen);
+    ptr += vlen;
     
     uint8_t type;
-    _table->_file.read(reinterpret_cast<char*>(&type), sizeof(type));
+    memcpy(&type, ptr, sizeof(type));
     _is_deleted = (type == 1);
     
     _valid = true;

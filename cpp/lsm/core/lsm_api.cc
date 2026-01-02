@@ -3,6 +3,7 @@
 #include <cstring>
 #include <string>
 #include <cstdlib>
+#include <iostream>
 
 // Helper to allocate error string
 static void set_error(char** errptr, const std::string& msg) {
@@ -100,6 +101,32 @@ extern "C" {
             if (errptr) *errptr = nullptr;
         } catch (const std::exception& e) {
             set_error(errptr, e.what());
+        }
+    }
+
+    void lsm_batch_get(lsm_db_t* db, lsm_batch_get_entry_t* entries, size_t count) {
+        for (size_t i = 0; i < count; ++i) {
+            try {
+                std::string value;
+                bool found = db->rep->Get(std::string(entries[i].key, entries[i].key_len), &value);
+                if (found) {
+                    entries[i].value = (char*)malloc(value.size());
+                    memcpy(entries[i].value, value.data(), value.size());
+                    entries[i].val_len = value.size();
+                    entries[i].found = 1;
+                    entries[i].error = nullptr;
+                } else {
+                    entries[i].value = nullptr;
+                    entries[i].val_len = 0;
+                    entries[i].found = 0;
+                    entries[i].error = nullptr;
+                }
+            } catch (const std::exception& e) {
+                entries[i].value = nullptr;
+                entries[i].val_len = 0;
+                entries[i].found = 0;
+                entries[i].error = strdup(e.what());
+            }
         }
     }
 

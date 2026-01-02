@@ -41,6 +41,10 @@ private:
     mutable std::vector<std::pair<int, std::shared_ptr<Table>>> _table_cache;
     
     std::shared_ptr<Table> GetTable(int file_number);
+
+    // Optimization: Index files by key for fast lookup
+    std::vector<const FileMetaData*> _files_by_key;
+    bool _l0_disjoint = false;
 };
 
 class VersionSet {

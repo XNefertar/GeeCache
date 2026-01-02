@@ -169,3 +169,73 @@ func (s *LSMStore) BatchPut(entries []BatchEntry) error {
 	}
 	return nil
 }
+
+type BatchGetEntry struct {
+	Key   string
+	Value []byte
+	Found bool
+	Error error
+}
+
+func (s *LSMStore) BatchGet(keys []string) ([]BatchGetEntry, error) {
+	count := len(keys)
+	if count == 0 {
+		return nil, nil
+	}
+
+	// 1. Calculate size for keys
+	structSize := unsafe.Sizeof(C.lsm_batch_get_entry_t{})
+	keysDataSize := 0
+	for _, k := range keys {
+		keysDataSize += len(k)
+	}
+
+	totalSize := C.size_t(int(structSize)*count + keysDataSize)
+
+	// 2. Allocate C memory
+	block := C.malloc(totalSize)
+	defer C.free(block)
+
+	cEntries := unsafe.Slice((*C.lsm_batch_get_entry_t)(block), count)
+	dataPtr := uintptr(block) + uintptr(structSize)*uintptr(count)
+
+	for i, k := range keys {
+		cEntries[i].key = (*C.char)(unsafe.Pointer(dataPtr))
+		cEntries[i].key_len = C.size_t(len(k))
+
+		if len(k) > 0 {
+			target := unsafe.Slice((*byte)(unsafe.Pointer(dataPtr)), len(k))
+			copy(target, k)
+			dataPtr += uintptr(len(k))
+		}
+
+		// Initialize output fields
+		cEntries[i].value = nil
+		cEntries[i].val_len = 0
+		cEntries[i].found = 0
+		cEntries[i].error = nil
+	}
+
+	// 3. Call C++
+	C.lsm_batch_get(s.db, (*C.lsm_batch_get_entry_t)(block), C.size_t(count))
+
+	// 4. Process results
+	results := make([]BatchGetEntry, count)
+	for i := 0; i < count; i++ {
+		results[i].Key = keys[i]
+		if cEntries[i].error != nil {
+			results[i].Error = errors.New(C.GoString(cEntries[i].error))
+			C.free(unsafe.Pointer(cEntries[i].error))
+		} else if cEntries[i].found != 0 {
+			results[i].Found = true
+			if cEntries[i].val_len > 0 {
+				results[i].Value = C.GoBytes(unsafe.Pointer(cEntries[i].value), C.int(cEntries[i].val_len))
+				C.free(unsafe.Pointer(cEntries[i].value))
+			}
+		} else {
+			results[i].Found = false
+		}
+	}
+
+	return results, nil
+}
