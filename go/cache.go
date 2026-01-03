@@ -11,31 +11,31 @@ import (
 // Corresponds to a Redis database instance (but sharded).
 type cacheShard struct {
 	mu         sync.Mutex
-	lru        *tinylfu.WTinyLFUCache[string, ByteView]
+	tinylfu    *tinylfu.WTinyLFUCache[string, ByteView]
 	cacheBytes int64
 }
 
 func (c *cacheShard) add(key string, value ByteView, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.lru == nil {
+	if c.tinylfu == nil {
 		// Estimate capacity for sketch. Assuming average item size 1KB.
 		capacity := int(c.cacheBytes / 1024)
 		if capacity < 100 {
 			capacity = 100
 		}
-		c.lru = tinylfu.NewWTinyLFUCache[string, ByteView](capacity, c.cacheBytes, nil)
+		c.tinylfu = tinylfu.NewWTinyLFUCache[string, ByteView](capacity, c.cacheBytes, nil)
 	}
-	c.lru.Put(key, value, ttl)
+	c.tinylfu.Put(key, value, ttl)
 }
 
 func (c *cacheShard) get(key string) (value ByteView, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.lru == nil {
+	if c.tinylfu == nil {
 		return
 	}
-	if v, ok := c.lru.Get(key); ok {
+	if v, ok := c.tinylfu.Get(key); ok {
 		return v, ok
 	}
 	return
@@ -44,17 +44,17 @@ func (c *cacheShard) get(key string) (value ByteView, ok bool) {
 func (c *cacheShard) remove(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.lru != nil {
-		c.lru.Remove(key)
+	if c.tinylfu != nil {
+		c.tinylfu.Remove(key)
 	}
 }
 
 func (c *cacheShard) removeExpired() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.lru != nil {
+	if c.tinylfu != nil {
 		// Periodic expiration: Randomly sample keys to expire
-		c.lru.RemoveExpired(20)
+		c.tinylfu.RemoveExpired(20)
 	}
 }
 
