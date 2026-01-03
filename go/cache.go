@@ -13,6 +13,7 @@ type cacheShard struct {
 	mu         sync.Mutex
 	tinylfu    *tinylfu.WTinyLFUCache[string, ByteView]
 	cacheBytes int64
+	onEvicted  func(key string, value ByteView)
 }
 
 func (c *cacheShard) add(key string, value ByteView, ttl time.Duration) {
@@ -24,7 +25,7 @@ func (c *cacheShard) add(key string, value ByteView, ttl time.Duration) {
 		if capacity < 100 {
 			capacity = 100
 		}
-		c.tinylfu = tinylfu.NewWTinyLFUCache[string, ByteView](capacity, c.cacheBytes, nil)
+		c.tinylfu = tinylfu.NewWTinyLFUCache[string, ByteView](capacity, c.cacheBytes, c.onEvicted)
 	}
 	c.tinylfu.Put(key, value, ttl)
 }
@@ -66,7 +67,7 @@ type cache struct {
 }
 
 // newCache creates a new sharded cache
-func newCache(cacheBytes int64) *cache {
+func newCache(cacheBytes int64, onEvicted func(key string, value ByteView)) *cache {
 	shardCount := uint64(256)
 	c := &cache{
 		shards:     make([]*cacheShard, shardCount),
@@ -82,6 +83,7 @@ func newCache(cacheBytes int64) *cache {
 	for i := uint64(0); i < shardCount; i++ {
 		c.shards[i] = &cacheShard{
 			cacheBytes: shardBytes,
+			onEvicted:  onEvicted,
 		}
 	}
 	return c

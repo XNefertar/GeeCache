@@ -98,14 +98,14 @@ func (g *grpcGetter) Close() {
 	}
 }
 
-func (g *grpcGetter) Get(in *pb.Request, out *pb.Response) error {
+func (g *grpcGetter) Get(ctx context.Context, in *pb.Request, out *pb.Response) error {
 	conn, err := g.getConn()
 	if err != nil {
 		return err
 	}
 
 	client := pb.NewGroupCacheClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 	resp, err := client.Get(ctx, in)
 	if err != nil {
@@ -115,14 +115,14 @@ func (g *grpcGetter) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
-func (g *grpcGetter) Remove(in *pb.Request) error {
+func (g *grpcGetter) Remove(ctx context.Context, in *pb.Request) error {
 	conn, err := g.getConn()
 	if err != nil {
 		return err
 	}
 
 	client := pb.NewGroupCacheClient(conn)
-	_, err = client.Remove(context.Background(), in)
+	_, err = client.Remove(ctx, in)
 	return err
 }
 
@@ -145,7 +145,7 @@ func (p *GRPCPool) Get(ctx context.Context, req *pb.Request) (*pb.Response, erro
 	if group == nil {
 		return nil, fmt.Errorf("no such group: %s", req.Group)
 	}
-	view, err := group.Get(req.Key)
+	view, err := group.Get(ctx, req.Key)
 	if err != nil {
 		return nil, err
 	}

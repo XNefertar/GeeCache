@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"geecache"
 	"testing"
 )
@@ -30,7 +31,7 @@ func TestL3Cache(t *testing.T) {
 	db := map[string]string{
 		"key1": "value1",
 	}
-	getter := geecache.GetterFunc(func(key string) ([]byte, error) {
+	getter := geecache.GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		if v, ok := db[key]; ok {
 			return []byte(v), nil
 		}
@@ -45,7 +46,7 @@ func TestL3Cache(t *testing.T) {
 	g.SetCentralCache(l3)
 
 	// 1. Get key1 (Miss L3, Hit DB, Populate L3)
-	v, err := g.Get("key1")
+	v, err := g.Get(context.Background(), "key1")
 	if err != nil || v.String() != "value1" {
 		t.Fatalf("failed to get key1: %v, %s", err, v.String())
 	}
@@ -60,7 +61,7 @@ func TestL3Cache(t *testing.T) {
 	// Group doesn't expose method to clear local cache easily for tests unless we use Remove
 	g.RemoveLocal("key1")
 
-	v, err = g.Get("key1")
+	v, err = g.Get(context.Background(), "key1")
 	if err != nil || v.String() != "value1" {
 		t.Fatalf("failed to get key1 from L3: %v, %s", err, v.String())
 	}

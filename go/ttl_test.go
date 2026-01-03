@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ func TestGroupTTL(t *testing.T) {
 	}
 	loadCounts := make(map[string]int)
 
-	getter := GetterFunc(func(key string) ([]byte, error) {
+	getter := GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		loadCounts[key]++
 		if v, ok := db[key]; ok {
 			return []byte(v), nil
@@ -29,7 +30,7 @@ func TestGroupTTL(t *testing.T) {
 
 	key := "Tom"
 	// 1. First Get - should load from getter
-	v, err := g.Get(key)
+	v, err := g.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,9 +43,9 @@ func TestGroupTTL(t *testing.T) {
 
 	// 2. Second Get immediately - should hit cache
 	// TinyLFU might reject first item. Access again to boost freq.
-	g.Get(key)
+	g.Get(context.Background(), key)
 
-	_, err = g.Get(key)
+	_, err = g.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func TestGroupTTL(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 
 	// 4. Third Get - should expire and reload
-	_, err = g.Get(key)
+	_, err = g.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestHotCacheTTL(t *testing.T) {
 
 	// Create a group with 1 second HotCacheTTL
 	// Use larger cache size to avoid immediate eviction due to small shard size
-	g, err := NewGroup("hot_ttl_test", 2<<20, GetterFunc(func(key string) ([]byte, error) {
+	g, err := NewGroup("hot_ttl_test", 2<<20, GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		return []byte("value"), nil
 	}), WithHotCacheTTL(time.Second))
 	if err != nil {

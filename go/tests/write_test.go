@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	"sync"
@@ -11,7 +12,7 @@ import (
 func TestWriteStrategies(t *testing.T) {
 	var mu sync.Mutex
 	var db = make(map[string]string)
-	var getter = geecache.GetterFunc(func(key string) ([]byte, error) {
+	var getter = geecache.GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if v, ok := db[key]; ok {
@@ -48,7 +49,7 @@ func TestWriteStrategies(t *testing.T) {
 		t.Fatalf("Write-Through failed to update DB. got %s, want %s", got1, val1)
 	}
 	// Check Cache
-	if v, err := g.Get(key1); err != nil || string(v.ByteSlice()) != val1 {
+	if v, err := g.Get(context.Background(), key1); err != nil || string(v.ByteSlice()) != val1 {
 		t.Fatalf("Write-Through failed to update Cache. got %v, want %s", v, val1)
 	}
 
@@ -61,7 +62,7 @@ func TestWriteStrategies(t *testing.T) {
 	}
 
 	// Check Cache immediately
-	if v, err := g.Get(key2); err != nil || string(v.ByteSlice()) != val2 {
+	if v, err := g.Get(context.Background(), key2); err != nil || string(v.ByteSlice()) != val2 {
 		t.Fatalf("Write-Back failed to update Cache immediately. got %v, want %s", v, val2)
 	}
 

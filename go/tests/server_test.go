@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	"geecache/geecachegrpc"
@@ -23,7 +24,7 @@ var serverDB = map[string]string{
 
 func createGroup() *geecache.Group {
 	g, _ := geecache.NewGroup("scores_server", 2<<10, geecache.GetterFunc(
-		func(key string) ([]byte, error) {
+		func(ctx context.Context, key string) ([]byte, error) {
 			log.Println("[SlowDB] search key", key)
 			if v, ok := serverDB[key]; ok {
 				return []byte(v), nil
@@ -48,7 +49,7 @@ func startAPIServer(apiAddr string, gee *geecache.Group) {
 	mux.Handle("/api", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			key := r.URL.Query().Get("key")
-			view, err := gee.Get(key)
+			view, err := gee.Get(r.Context(), key)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

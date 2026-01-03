@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	"geecache/bridge"
@@ -22,7 +23,7 @@ func BenchmarkL3_Integration(b *testing.B) {
 	}
 
 	// Mock DB getter (should not be reached if L3 hit)
-	getter := geecache.GetterFunc(func(key string) ([]byte, error) {
+	getter := geecache.GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("db miss")
 	})
 
@@ -49,7 +50,7 @@ func BenchmarkL3_Integration(b *testing.B) {
 		for pb.Next() {
 			key := keys[r.Intn(numKeys)]
 			// 这将频繁触发 L3 读取
-			view, err := g.Get(key)
+			view, err := g.Get(context.Background(), key)
 			if err != nil {
 				b.Error(err)
 			}

@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	"geecache/geecachegrpc"
@@ -20,7 +21,7 @@ func TestGRPCGetter(t *testing.T) {
 	}
 
 	g, _ := geecache.NewGroup(groupName, 2<<10, geecache.GetterFunc(
-		func(key string) ([]byte, error) {
+		func(ctx context.Context, key string) ([]byte, error) {
 			if v, ok := db[key]; ok {
 				return []byte(v), nil
 			}
@@ -56,7 +57,7 @@ func TestGRPCGetter(t *testing.T) {
 		Key:   "key1",
 	}
 	res := &pb.Response{}
-	err := peer.Get(req, res)
+	err := peer.Get(context.Background(), req, res)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestGRPCGetter(t *testing.T) {
 	}
 
 	// 4. Test Remove (should not fail)
-	err = peer.Remove(req)
+	err = peer.Remove(context.Background(), req)
 	if err != nil {
 		t.Errorf("Remove failed: %v", err)
 	}
