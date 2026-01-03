@@ -1,17 +1,17 @@
 package geecache
 
 import (
-	"geecache/lru"
+	"geecache/tinylfu"
 	"hash/fnv"
 	"sync"
 	"time"
 )
 
-// cacheShard wraps an LRU cache and adds concurrency control.
+// cacheShard wraps a TinyLFU cache and adds concurrency control.
 // Corresponds to a Redis database instance (but sharded).
 type cacheShard struct {
 	mu         sync.Mutex
-	lru        *lru.Cache
+	lru        *tinylfu.TinyLFUCache[string, ByteView]
 	cacheBytes int64
 }
 
@@ -19,9 +19,14 @@ func (c *cacheShard) add(key string, value ByteView, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
-		c.lru = lru.New(c.cacheBytes, nil)
+		// Estimate capacity for sketch. Assuming average item size 1KB.
+		capacity := int(c.cacheBytes / 1024)
+		if capacity < 100 {
+			capacity = 100
+		}
+		c.lru = tinylfu.NewTinyLFU[string, ByteView](capacity, c.cacheBytes, nil)
 	}
-	c.lru.Add(key, value, ttl)
+	c.lru.Put(key, value, ttl)
 }
 
 func (c *cacheShard) get(key string) (value ByteView, ok bool) {
