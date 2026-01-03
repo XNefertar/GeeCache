@@ -11,7 +11,7 @@ import (
 // Corresponds to a Redis database instance (but sharded).
 type cacheShard struct {
 	mu         sync.Mutex
-	lru        *tinylfu.TinyLFUCache[string, ByteView]
+	lru        *tinylfu.WTinyLFUCache[string, ByteView]
 	cacheBytes int64
 }
 
@@ -24,7 +24,7 @@ func (c *cacheShard) add(key string, value ByteView, ttl time.Duration) {
 		if capacity < 100 {
 			capacity = 100
 		}
-		c.lru = tinylfu.NewTinyLFU[string, ByteView](capacity, c.cacheBytes, nil)
+		c.lru = tinylfu.NewWTinyLFUCache[string, ByteView](capacity, c.cacheBytes, nil)
 	}
 	c.lru.Put(key, value, ttl)
 }
@@ -36,7 +36,7 @@ func (c *cacheShard) get(key string) (value ByteView, ok bool) {
 		return
 	}
 	if v, ok := c.lru.Get(key); ok {
-		return v.(ByteView), ok
+		return v, ok
 	}
 	return
 }

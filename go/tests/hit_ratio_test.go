@@ -45,11 +45,11 @@ func (w *LRUWrapper) Name() string { return "LRU" }
 
 // TinyLFU Wrapper
 type TinyLFUWrapper struct {
-	c *tinylfu.TinyLFUCache[string, String]
+	c *tinylfu.WTinyLFUCache[string, String]
 }
 
 func NewTinyLFUWrapper(capacity int, maxBytes int64) *TinyLFUWrapper {
-	return &TinyLFUWrapper{c: tinylfu.NewTinyLFU[string, String](capacity, maxBytes, nil)}
+	return &TinyLFUWrapper{c: tinylfu.NewWTinyLFUCache[string, String](capacity, maxBytes, nil)}
 }
 
 func (w *TinyLFUWrapper) Get(key string) bool {
@@ -184,6 +184,99 @@ func TestHitRatioComparison(t *testing.T) {
 
 		if diff < 2.0 {
 			t.Log("TinyLFU did not show significant scan resistance improvement")
+		}
+	})
+
+	// 3. Large Scale Zipfian (High Load)
+	t.Run("Large Scale Zipfian", func(t *testing.T) {
+		universeSize := uint64(10000) // 10k items
+		requestCount := 100000        // 100k requests
+		zipf := NewZipfGenerator(1.01, 1.0, universeSize)
+
+		keys := make([]string, requestCount)
+		for i := 0; i < requestCount; i++ {
+			keys[i] = fmt.Sprintf("%06d", zipf.Next())
+		}
+
+		// Cache size: 10% of universe (1000 items)
+		cacheCapacityItems := 1000
+		maxBytes := int64(cacheCapacityItems) * itemSize
+
+		lruCache := NewLRUWrapper(maxBytes)
+		lfuCache := NewTinyLFUWrapper(cacheCapacityItems*10, maxBytes)
+
+		lruHit := runTrace(t, lruCache, keys)
+		lfuHit := runTrace(t, lfuCache, keys)
+
+		t.Logf("Large Scale - LRU Hit Ratio: %.2f%%", lruHit*100)
+		t.Logf("Large Scale - TinyLFU Hit Ratio: %.2f%%", lfuHit*100)
+
+		diff := (lfuHit - lruHit) * 100
+		t.Logf("TinyLFU Improvement: +%.2f%%", diff)
+	})
+
+	// 4. Scan Attack (Focus on Hot Key Survival)
+	t.Run("Scan Attack Survival", func(t *testing.T) {
+		// Scenario:
+		// 1. Fill cache with Hot Keys (Frequency > 1)
+		// 2. Flood with Cold Keys (Frequency = 1, Count > Cache Capacity)
+		// 3. Check how many Hot Keys remain
+
+		hotCount := 50   // Half of cache
+		scanCount := 200 // 2x Cache Capacity (100)
+
+		hotKeys := make([]string, hotCount)
+		for i := 0; i < hotCount; i++ {
+			hotKeys[i] = fmt.Sprintf("hot-%03d", i)
+		}
+
+		scanKeys := make([]string, scanCount)
+		for i := 0; i < scanCount; i++ {
+			scanKeys[i] = fmt.Sprintf("scan-%03d", i)
+		}
+
+		lruCache := NewLRUWrapper(maxBytes)
+		lfuCache := NewTinyLFUWrapper(cacheCapacityItems*10, maxBytes)
+
+		// Helper to run phases
+		runPhase := func(c CacheWrapper, keys []string, repeat int) {
+			for r := 0; r < repeat; r++ {
+				for _, k := range keys {
+					if !c.Get(k) {
+						c.Add(k, String("."))
+					}
+				}
+			}
+		}
+
+		// Phase 1: Warmup (Boost Frequency)
+		runPhase(lruCache, hotKeys, 10)
+		runPhase(lfuCache, hotKeys, 10)
+
+		// Phase 2: Scan Attack (Flood)
+		runPhase(lruCache, scanKeys, 1)
+		runPhase(lfuCache, scanKeys, 1)
+
+		// Phase 3: Survival Check
+		checkSurvival := func(c CacheWrapper, name string) float64 {
+			hits := 0
+			for _, k := range hotKeys {
+				if c.Get(k) {
+					hits++
+				}
+			}
+			ratio := float64(hits) / float64(len(hotKeys))
+			t.Logf("[%s] Hot Key Survival Rate: %.2f%% (%d/%d)", name, ratio*100, hits, len(hotKeys))
+			return ratio
+		}
+
+		lruSurvival := checkSurvival(lruCache, "LRU")
+		lfuSurvival := checkSurvival(lfuCache, "TinyLFU")
+
+		if lfuSurvival <= lruSurvival {
+			t.Log("Warning: TinyLFU did not protect hot keys better than LRU (or both 100%)")
+		} else {
+			t.Logf("TinyLFU Survival Improvement: +%.2f%%", (lfuSurvival-lruSurvival)*100)
 		}
 	})
 }

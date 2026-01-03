@@ -24,10 +24,10 @@ type Cache[K comparable, V Value] struct {
 	nbytes    int64
 	ll        *list.List
 	cache     map[K]*list.Element
-	OnEvicted func(key K, value Value)
+	OnEvicted func(key K, value V)
 }
 
-func NewCache[K comparable, V Value](maxBytes int64, onEvicted func(K, Value)) *Cache[K, V] {
+func NewCache[K comparable, V Value](maxBytes int64, onEvicted func(K, V)) *Cache[K, V] {
 	return &Cache[K, V]{
 		maxBytes:  maxBytes,
 		ll:        list.New(),
@@ -36,17 +36,19 @@ func NewCache[K comparable, V Value](maxBytes int64, onEvicted func(K, Value)) *
 	}
 }
 
-func (c *Cache[K, V]) Get(key K) (value Value, ok bool) {
+func (c *Cache[K, V]) Get(key K) (value V, ok bool) {
 	if element, ok := c.cache[key]; ok {
 		kv := element.Value.(*entry[K, V])
 		if !kv.expireAt.IsZero() && kv.expireAt.Before(time.Now()) {
 			c.RemoveElement(element)
-			return nil, false
+			var zero V
+			return zero, false
 		}
 		c.ll.MoveToFront(element)
 		return kv.value, true
 	}
-	return nil, false
+	var zero V
+	return zero, false
 }
 
 func (c *Cache[K, V]) Remove(key K) {
@@ -76,7 +78,24 @@ func (c *Cache[K, V]) RemoveOldest() {
 	}
 }
 
-func (c *Cache[K, V]) Add(key K, value V, ttl time.Duration) {
+func (c *Cache[K, V]) Contains(key K) bool {
+	_, ok := c.cache[key]
+	return ok
+}
+
+func (c *Cache[K, V]) RemoveTail() (K, V) {
+	ent := c.ll.Back()
+	if ent != nil {
+		kv := ent.Value.(*entry[K, V])
+		c.RemoveElement(ent)
+		return kv.key, kv.value
+	}
+	var zeroK K
+	var zeroV V
+	return zeroK, zeroV
+}
+
+func (c *Cache[K, V]) Add(key K, value V, ttl time.Duration) (evictedKey K, evictedValue V, evicted bool) {
 	var expiredAt time.Time
 	if ttl > 0 {
 		expiredAt = time.Now().Add(ttl)
@@ -87,23 +106,36 @@ func (c *Cache[K, V]) Add(key K, value V, ttl time.Duration) {
 		c.nbytes += int64(value.Len()) - int64(kv.value.Len())
 		kv.value = value
 		kv.expireAt = expiredAt
-	} else {
-		ele := c.ll.PushFront(&entry[K, V]{
-			key:      key,
-			value:    value,
-			expireAt: expiredAt,
-			dataType: 0,
-		})
-		c.cache[key] = ele
-		kSize := 0
-		if k, ok := any(key).(string); ok {
-			kSize = len(k)
+		// 如果更新导致超出容量，移除旧元素（通常更新不触发 TinyLFU 的 candidate 逻辑，但需维持容量）
+		for c.maxBytes != 0 && c.maxBytes < c.nbytes {
+			c.RemoveOldest()
 		}
-		c.nbytes += int64(kSize) + int64(value.Len())
+		return
 	}
-	for c.maxBytes != 0 && c.maxBytes < c.nbytes {
-		c.RemoveOldest()
+
+	ele := c.ll.PushFront(&entry[K, V]{
+		key:      key,
+		value:    value,
+		expireAt: expiredAt,
+		dataType: 0,
+	})
+	c.cache[key] = ele
+	kSize := 0
+	if k, ok := any(key).(string); ok {
+		kSize = len(k)
 	}
+	c.nbytes += int64(kSize) + int64(value.Len())
+
+	// 如果超出容量，移除最旧的元素并返回，以便 WTinyLFU 决定是否将其晋升或丢弃
+	if c.maxBytes != 0 && c.maxBytes < c.nbytes {
+		evictedKey, evictedValue = c.RemoveTail()
+		evicted = true
+		// 如果移除一个后仍然超出（例如新元素极大），继续移除直到满足限制
+		for c.maxBytes != 0 && c.maxBytes < c.nbytes {
+			c.RemoveOldest()
+		}
+	}
+	return
 }
 
 func (c *Cache[K, V]) RemoveExpired(maxKeys int) {
@@ -113,17 +145,17 @@ func (c *Cache[K, V]) RemoveExpired(maxKeys int) {
 			break
 		}
 		count++
-		kv := element.Value.(*entry[K, Value])
+		kv := element.Value.(*entry[K, V])
 		if !kv.expireAt.IsZero() && kv.expireAt.Before(time.Now()) {
 			c.RemoveElement(element)
 		}
 	}
 }
 
-func (c *Cache[K, V]) PeekOldest() *entry[K, Value] {
+func (c *Cache[K, V]) PeekOldest() *entry[K, V] {
 	element := c.ll.Back()
 	if element != nil {
-		return element.Value.(*entry[K, Value])
+		return element.Value.(*entry[K, V])
 	}
 	return nil
 }
@@ -199,66 +231,190 @@ func (s *cmSketch) Estimate(keyString string) uint8 {
 	return minCount
 }
 
-type TinyLFUCache[K comparable, V Value] struct {
-	cache  *Cache[K, Value]
+type WTinyLFUCache[K comparable, V Value] struct {
+	window *Cache[K, V]
+
+	protected *Cache[K, V]
+	probation *Cache[K, V]
+
 	sketch *cmSketch
 }
 
-func NewTinyLFU[K comparable, V Value](capacity int, maxBytes int64, onEvicted func(K, Value)) *TinyLFUCache[K, V] {
-	return &TinyLFUCache[K, V]{
-		cache:  NewCache[K, Value](maxBytes, onEvicted),
-		sketch: newCMSketch(capacity),
+func NewWTinyLFUCache[K comparable, V Value](capacity int, maxBytes int64, onEvicted func(K, V)) *WTinyLFUCache[K, V] {
+	if maxBytes < 1 {
+		return nil
+	}
+
+	// Window Cache: 1% of total bytes
+	windowBytes := int64(float64(maxBytes) * 0.01)
+	if windowBytes < 1 {
+		windowBytes = 1
+	}
+
+	// Main Cache: 99% of total bytes
+	mainBytes := maxBytes - windowBytes
+
+	// Protected: 80% of Main
+	protectedBytes := int64(float64(mainBytes) * 0.8)
+
+	// Probation: 20% of Main
+	probationBytes := mainBytes - protectedBytes
+
+	if probationBytes < 1 {
+		probationBytes = 1
+	}
+	// Adjust protected if needed to ensure total <= maxBytes (integer math might leave gaps, which is fine)
+
+	return &WTinyLFUCache[K, V]{
+		window:    NewCache[K, V](windowBytes, nil),
+		protected: NewCache[K, V](protectedBytes, nil),
+		probation: NewCache[K, V](probationBytes, onEvicted), // Eviction from probation is real eviction
+		sketch:    newCMSketch(capacity),
 	}
 }
 
-func (c *TinyLFUCache[K, V]) getKeyStr(key K) string {
+func (c *WTinyLFUCache[K, V]) getKeyStr(key K) string {
 	if k, ok := any(key).(string); ok {
 		return k
 	}
 	return fmt.Sprintf("%v", key)
 }
 
-func (c *TinyLFUCache[K, V]) Get(key K) (Value, bool) {
+func (c *WTinyLFUCache[K, V]) Get(key K) (V, bool) {
 	keyStr := c.getKeyStr(key)
 	c.sketch.Increment(keyStr)
-	return c.cache.Get(key)
+
+	if val, ok := c.window.Get(key); ok {
+		return val, ok
+	}
+
+	if val, ok := c.protected.Get(key); ok {
+		return val, ok
+	}
+
+	if val, ok := c.probation.Get(key); ok {
+		// Promote to protected
+		// Retrieve expiration from probation entry
+		elem := c.probation.cache[key]
+		ent := elem.Value.(*entry[K, V])
+		expireAt := ent.expireAt
+
+		c.probation.Remove(key)
+
+		// Calculate TTL for protected
+		var ttl time.Duration
+		if !expireAt.IsZero() {
+			ttl = time.Until(expireAt)
+			if ttl <= 0 {
+				ttl = time.Nanosecond
+			}
+		}
+
+		// Check if protected will evict to capture victim's expiration
+		var victimExpireAt time.Time
+		kSize := 0
+		if k, ok := any(key).(string); ok {
+			kSize = len(k)
+		}
+		newSize := int64(kSize) + int64(val.Len())
+
+		if c.protected.maxBytes > 0 && c.protected.nbytes+newSize > c.protected.maxBytes {
+			if tail := c.protected.ll.Back(); tail != nil {
+				victimExpireAt = tail.Value.(*entry[K, V]).expireAt
+			} else {
+				victimExpireAt = expireAt
+			}
+		}
+
+		k, v, evicted := c.protected.Add(key, val, ttl)
+		if evicted {
+			// Demote evicted from protected to probation
+			var victimTTL time.Duration
+			if !victimExpireAt.IsZero() {
+				victimTTL = time.Until(victimExpireAt)
+				if victimTTL <= 0 {
+					victimTTL = time.Nanosecond
+				}
+			}
+			c.probation.Add(k, v, victimTTL)
+		}
+		return val, true
+	}
+	var zeroV V
+	return zeroV, false
 }
 
-func (c *TinyLFUCache[K, V]) Put(key K, value V, ttl time.Duration) {
+func (c *WTinyLFUCache[K, V]) Put(key K, value V, ttl time.Duration) {
 	keyStr := c.getKeyStr(key)
 	c.sketch.Increment(keyStr)
 
-	if _, ok := c.cache.cache[key]; ok {
-		c.cache.Add(key, value, ttl)
+	if c.window.Contains(key) {
+		c.window.Add(key, value, ttl)
 		return
 	}
 
-	// Calculate size of new item
+	if c.protected.Contains(key) {
+		c.protected.Add(key, value, ttl)
+		return
+	}
+
+	if c.probation.Contains(key) {
+		// Update in probation
+		c.probation.Add(key, value, ttl)
+		return
+	}
+
+	candidateKey, candidateValue, evicted := c.window.Add(key, value, ttl)
+	if !evicted {
+		return
+	}
+
+	c.admit(candidateKey, candidateValue, ttl)
+}
+
+func (c *WTinyLFUCache[K, V]) admit(candidateKey K, candidateValue V, candidateTTL time.Duration) {
 	kSize := 0
-	if k, ok := any(key).(string); ok {
+	if k, ok := any(candidateKey).(string); ok {
 		kSize = len(k)
 	}
-	newSize := int64(kSize) + int64(value.Len())
+	newSize := int64(kSize) + int64(candidateValue.Len())
 
-	if c.cache.maxBytes > 0 && c.cache.nbytes+newSize > c.cache.maxBytes {
-		victimKey := c.cache.PeekOldest()
-		if victimKey != nil {
-			victimKeyStr := c.getKeyStr(victimKey.key)
-			candidateFreq := c.sketch.Estimate(keyStr)
-			victimFreq := c.sketch.Estimate(victimKeyStr)
+	if c.probation.maxBytes == 0 || c.probation.nbytes+newSize <= c.probation.maxBytes {
+		c.probation.Add(candidateKey, candidateValue, candidateTTL)
+		return
+	}
 
-			if candidateFreq <= victimFreq {
-				return // Reject
-			}
+	victimEntry := c.probation.PeekOldest()
+	if victimEntry == nil {
+		c.probation.Add(candidateKey, candidateValue, candidateTTL)
+		return
+	}
+
+	candidateKeyStr := c.getKeyStr(candidateKey)
+	candidateFreq := c.sketch.Estimate(candidateKeyStr)
+	victimFreq := c.sketch.Estimate(c.getKeyStr(victimEntry.key))
+
+	if candidateFreq > victimFreq {
+		c.probation.Add(candidateKey, candidateValue, candidateTTL)
+	} else {
+		// Reject candidate
+		if c.probation.OnEvicted != nil {
+			c.probation.OnEvicted(candidateKey, candidateValue)
 		}
 	}
-	c.cache.Add(key, value, ttl)
+}
+func (c *WTinyLFUCache[K, V]) Remove(key K) {
+	c.window.Remove(key)
+	c.protected.Remove(key)
+	c.probation.Remove(key)
 }
 
-func (c *TinyLFUCache[K, V]) Remove(key K) {
-	c.cache.Remove(key)
+func (c *WTinyLFUCache[K, V]) RemoveExpired(maxKeys int) {
+	c.window.RemoveExpired(maxKeys)
+	c.protected.RemoveExpired(maxKeys)
+	c.probation.RemoveExpired(maxKeys)
 }
 
-func (c *TinyLFUCache[K, V]) RemoveExpired(maxKeys int) {
-	c.cache.RemoveExpired(maxKeys)
+func (c *WTinyLFUCache[K, V]) Len() int {
+	return c.window.Len() + c.protected.Len() + c.probation.Len()
 }
