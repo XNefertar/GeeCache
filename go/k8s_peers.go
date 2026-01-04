@@ -42,6 +42,17 @@ type k8sHTTPGetter struct {
 // self: the address of this peer (e.g., "http://pod-name:port")
 // port: the port to use for peer communication
 func NewK8sPeerPicker(dnsName, self, port string) *K8sPeerPicker {
+	// Input validation
+	if dnsName == "" {
+		log.Fatal("[K8sPeerPicker] DNS name cannot be empty")
+	}
+	if self == "" {
+		log.Fatal("[K8sPeerPicker] Self address cannot be empty")
+	}
+	if port == "" {
+		log.Fatal("[K8sPeerPicker] Port cannot be empty")
+	}
+	
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &K8sPeerPicker{
 		self:        self,
@@ -70,8 +81,13 @@ func NewK8sPeerPicker(dnsName, self, port string) *K8sPeerPicker {
 
 // discoverPeers resolves DNS to find all peers
 func (p *K8sPeerPicker) discoverPeers() error {
+	// Create context with timeout for DNS lookup
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
 	// Resolve DNS to get all pod IPs
-	ips, err := net.LookupHost(p.dnsName)
+	resolver := &net.Resolver{}
+	ips, err := resolver.LookupHost(ctx, p.dnsName)
 	if err != nil {
 		return fmt.Errorf("DNS lookup failed for %s: %w", p.dnsName, err)
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -17,14 +18,24 @@ type ShutdownManager struct {
 	peerPickers   []interface{ Stop() }
 	mu            sync.Mutex
 	shutdownFuncs []func(context.Context) error
+	timeout       time.Duration
 }
 
 // NewShutdownManager creates a new shutdown manager
 func NewShutdownManager() *ShutdownManager {
+	// Default timeout, can be overridden via environment variable
+	timeout := 30 * time.Second
+	if timeoutStr := os.Getenv("SHUTDOWN_TIMEOUT_SECONDS"); timeoutStr != "" {
+		if t, err := strconv.Atoi(timeoutStr); err == nil {
+			timeout = time.Duration(t) * time.Second
+		}
+	}
+	
 	return &ShutdownManager{
 		servers:       make([]*http.Server, 0),
 		peerPickers:   make([]interface{ Stop() }, 0),
 		shutdownFuncs: make([]func(context.Context) error, 0),
+		timeout:       timeout,
 	}
 }
 
@@ -74,9 +85,13 @@ func (sm *ShutdownManager) shutdown(ctx context.Context) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	// Use configured timeout
+	shutdownCtx, cancel := context.WithTimeout(ctx, sm.timeout)
+	defer cancel()
+
 	// 1. Execute custom shutdown functions
 	for i, fn := range sm.shutdownFuncs {
-		if err := fn(ctx); err != nil {
+		if err := fn(shutdownCtx); err != nil {
 			log.Printf("[ShutdownManager] Custom shutdown function %d failed: %v", i, err)
 		}
 	}
@@ -92,7 +107,7 @@ func (sm *ShutdownManager) shutdown(ctx context.Context) {
 		wg.Add(1)
 		go func(srv *http.Server) {
 			defer wg.Done()
-			if err := srv.Shutdown(ctx); err != nil {
+			if err := srv.Shutdown(shutdownCtx); err != nil {
 				log.Printf("[ShutdownManager] Server shutdown error: %v", err)
 			}
 		}(server)
@@ -108,7 +123,7 @@ func (sm *ShutdownManager) shutdown(ctx context.Context) {
 	select {
 	case <-done:
 		log.Println("[ShutdownManager] All servers shutdown successfully")
-	case <-ctx.Done():
+	case <-shutdownCtx.Done():
 		log.Println("[ShutdownManager] Shutdown timeout exceeded, forcing exit")
 	}
 }

@@ -64,6 +64,8 @@ spec:
     spec:
       containers:
       - name: geecache
+        # NOTE: For production, use a specific version tag instead of 'latest'
+        # Example: image: geecache:v1.0.0 or use image digest
         image: geecache:latest
         imagePullPolicy: IfNotPresent
         ports:
