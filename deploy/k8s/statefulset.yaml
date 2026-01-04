@@ -1,0 +1,125 @@
+---
+# Headless Service for DNS-based peer discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: geecache-headless
+  namespace: default
+  labels:
+    app: geecache
+spec:
+  clusterIP: None  # Headless service
+  selector:
+    app: geecache
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: cache
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+
+---
+# Regular Service for external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: geecache
+  namespace: default
+  labels:
+    app: geecache
+spec:
+  type: ClusterIP
+  selector:
+    app: geecache
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: cache
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+
+---
+# StatefulSet for stable pod identity
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: geecache
+  namespace: default
+spec:
+  serviceName: geecache-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: geecache
+  template:
+    metadata:
+      labels:
+        app: geecache
+    spec:
+      containers:
+      - name: geecache
+        image: geecache:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: cache
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        envFrom:
+        - configMapRef:
+            name: geecache-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: cache-data
+          mountPath: /data
+  volumeClaimTemplates:
+  - metadata:
+      name: cache-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi

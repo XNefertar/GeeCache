@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geecache-config
+  namespace: default
+data:
+  # Cache configuration
+  CACHE_MEMORY_LIMIT: "134217728"  # 128MB in bytes (128 * 1024 * 1024)
+  CACHE_HOT_MEMORY_LIMIT: "16777216"  # 16MB in bytes
+  CACHE_TTL_SECONDS: "3600"  # 1 hour
+  CACHE_HOT_TTL_SECONDS: "300"  # 5 minutes
+  
+  # Distributed configuration
+  CONSISTENT_HASH_REPLICAS: "50"
+  
+  # Server configuration
+  SERVER_PORT: "8080"
+  METRICS_PORT: "9090"
+  
+  # Kubernetes service discovery
+  K8S_SERVICE_NAME: "geecache-headless"
+  K8S_NAMESPACE: "default"

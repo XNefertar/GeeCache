@@ -1,0 +1,43 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: geecache-combined-chaos
+  namespace: default
+spec:
+  entry: the-entry
+  templates:
+    - name: the-entry
+      templateType: Serial
+      deadline: 10m
+      children:
+        - workflow-network-delay
+        - workflow-pod-kill
+    
+    - name: workflow-network-delay
+      templateType: NetworkChaos
+      deadline: 3m
+      networkChaos:
+        action: delay
+        mode: one
+        selector:
+          namespaces:
+            - default
+          labelSelectors:
+            app: geecache
+        delay:
+          latency: '100ms'
+          correlation: '50'
+          jitter: '10ms'
+        duration: '2m'
+    
+    - name: workflow-pod-kill
+      templateType: PodChaos
+      deadline: 1m
+      podChaos:
+        action: pod-kill
+        mode: one
+        selector:
+          namespaces:
+            - default
+          labelSelectors:
+            app: geecache
