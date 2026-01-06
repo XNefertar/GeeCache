@@ -185,7 +185,9 @@ func startAPIServer(apiPort string, group *geecache.Group, health *geecache.Heal
 	}
 
 	log.Printf("Frontend server is running at http://localhost:%s", apiPort)
-	log.Fatal(srv.ListenAndServe())
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("API server error: %v", err)
+	}
 }
 
 func runHealthCheck() int {
