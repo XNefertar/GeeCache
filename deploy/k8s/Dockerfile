@@ -1,4 +1,4 @@
-# Build stage for C++ LSM storage
+# Build stage for C++ LSM cpp
 FROM golang:1.24-bookworm AS cpp-builder
 
 # Install C++ build tools
@@ -10,12 +10,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /build
 
-# Copy C++ storage code
+# Copy C++ cpp code
 COPY cpp/ ./cpp/
-COPY storage/ ./storage/
 
-# Build LSM storage library
-RUN cd storage/lsm && \
+# Build LSM cpp library
+RUN cd cpp/lsm && \
     mkdir -p build && \
     cd build && \
     cmake .. && \
@@ -23,6 +22,8 @@ RUN cd storage/lsm && \
 
 # Build stage for Go application
 FROM golang:1.24-bookworm AS go-builder
+
+ENV GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /build
 
@@ -33,8 +34,8 @@ COPY go/go.mod go/go.sum ./go/
 RUN cd go && go mod download
 
 # Copy C++ build artifacts
-COPY --from=cpp-builder /build/storage/lsm/build/liblsm.a ./storage/lsm/build/
-COPY --from=cpp-builder /build/storage/lsm/include ./storage/lsm/include
+COPY --from=cpp-builder /build/cpp/lsm/build/liblsm.a ./cpp/lsm/build/
+COPY --from=cpp-builder /build/cpp/lsm/include ./cpp/lsm/include
 
 # Copy Go source
 COPY go/ ./go/

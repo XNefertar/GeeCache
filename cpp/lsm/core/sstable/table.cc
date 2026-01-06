@@ -90,7 +90,7 @@ bool Table::LoadIndex() {
 Table::Status Table::Get(const std::string& key, std::string* value) {
     // Check Bloom Filter first
     if (!_filter_data.empty() && !_filter_policy.KeyMayMatch(key, _filter_data)) {
-        return ; // Definitely not found
+        return kNotFound; // Definitely not found
     }
 
     // Binary search in index

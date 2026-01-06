@@ -18,16 +18,16 @@ import (
 
 // K8sPeerPicker implements PeerPicker with DNS-based service discovery for Kubernetes
 type K8sPeerPicker struct {
-	self         string
-	basePath     string
-	dnsName      string
-	port         string
-	mu           sync.RWMutex
-	peers        *consistenthash.Map
-	httpGetters  map[string]*k8sHTTPGetter
+	self          string
+	basePath      string
+	dnsName       string
+	port          string
+	mu            sync.RWMutex
+	peers         *consistenthash.Map
+	httpGetters   map[string]*k8sHTTPGetter
 	refreshTicker *time.Ticker
-	ctx          context.Context
-	cancel       context.CancelFunc
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // k8sHTTPGetter wraps the HTTP getter with health tracking
@@ -52,7 +52,7 @@ func NewK8sPeerPicker(dnsName, self, port string) *K8sPeerPicker {
 	if port == "" {
 		log.Fatal("[K8sPeerPicker] Port cannot be empty")
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &K8sPeerPicker{
 		self:        self,
@@ -63,19 +63,19 @@ func NewK8sPeerPicker(dnsName, self, port string) *K8sPeerPicker {
 		ctx:         ctx,
 		cancel:      cancel,
 	}
-	
+
 	// Initialize with empty consistent hash
 	p.peers = consistenthash.New(50, nil)
-	
+
 	// Initial discovery
 	if err := p.discoverPeers(); err != nil {
 		log.Printf("[K8sPeerPicker] Initial discovery failed: %v", err)
 	}
-	
+
 	// Start background refresh
 	p.refreshTicker = time.NewTicker(10 * time.Second)
 	go p.refreshLoop()
-	
+
 	return p
 }
 
@@ -84,29 +84,29 @@ func (p *K8sPeerPicker) discoverPeers() error {
 	// Create context with timeout for DNS lookup
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	// Resolve DNS to get all pod IPs
 	resolver := &net.Resolver{}
 	ips, err := resolver.LookupHost(ctx, p.dnsName)
 	if err != nil {
 		return fmt.Errorf("DNS lookup failed for %s: %w", p.dnsName, err)
 	}
-	
+
 	if len(ips) == 0 {
 		return fmt.Errorf("no peers found via DNS: %s", p.dnsName)
 	}
-	
+
 	// Build peer list with http:// prefix and port
 	var peers []string
 	newGetters := make(map[string]*k8sHTTPGetter)
-	
+
 	for _, ip := range ips {
 		peerAddr := fmt.Sprintf("http://%s:%s", ip, p.port)
 		if peerAddr == p.self {
 			continue // Skip self
 		}
 		peers = append(peers, peerAddr)
-		
+
 		// Reuse existing getter or create new one
 		p.mu.RLock()
 		if getter, exists := p.httpGetters[peerAddr]; exists {
@@ -119,15 +119,15 @@ func (p *K8sPeerPicker) discoverPeers() error {
 		}
 		p.mu.RUnlock()
 	}
-	
+
 	// Update peers atomically
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	p.peers = consistenthash.New(50, nil)
 	p.peers.Add(peers...)
 	p.httpGetters = newGetters
-	
+
 	log.Printf("[K8sPeerPicker] Discovered %d peers via DNS %s", len(peers), p.dnsName)
 	return nil
 }
@@ -150,7 +150,7 @@ func (p *K8sPeerPicker) refreshLoop() {
 func (p *K8sPeerPicker) PickPeer(key string) (PeerGetter, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	if peer := p.peers.Get(key); peer != "" && peer != p.self {
 		if getter, ok := p.httpGetters[peer]; ok && getter.isHealthy() {
 			return getter, true
@@ -163,7 +163,7 @@ func (p *K8sPeerPicker) PickPeer(key string) (PeerGetter, bool) {
 func (p *K8sPeerPicker) GetAllPeers() []PeerGetter {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	var peers []PeerGetter
 	for _, peer := range p.peers.List() {
 		if peer != p.self {
@@ -187,7 +187,7 @@ func (p *K8sPeerPicker) Stop() {
 
 // k8sHTTPGetter methods
 
-func (g *k8sHTTPGetter) Get(in *pb.Request, out *pb.Response) error {
+func (g *k8sHTTPGetter) Get(context context.Context, in *pb.Request, out *pb.Response) error {
 	u := fmt.Sprintf(
 		"%v%v/%v",
 		g.baseURL,
@@ -218,7 +218,7 @@ func (g *k8sHTTPGetter) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
-func (g *k8sHTTPGetter) Remove(in *pb.Request) error {
+func (g *k8sHTTPGetter) Remove(context context.Context, in *pb.Request) error {
 	u := fmt.Sprintf(
 		"%v%v/%v",
 		g.baseURL,
