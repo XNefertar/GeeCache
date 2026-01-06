@@ -56,13 +56,20 @@ RUN apt-get update && apt-get install -y \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
+ARG UID=10001
+ARG GID=10001
+RUN groupadd --gid $GID appgroup && \
+    useradd --uid $UID --gid $GID --create-home appuser
+
 WORKDIR /app
 
 # Copy binary
-COPY --from=go-builder /geecache-server /app/
+COPY --from=go-builder --chown=appuser:appgroup /geecache-server /app/
 
 # Create data directory
-RUN mkdir -p /data
+RUN mkdir -p /data && chown -R appuser:appgroup /data
+
+USER appuser
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
