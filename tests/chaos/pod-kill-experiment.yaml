@@ -1,0 +1,18 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: geecache-pod-kill
+  namespace: default
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: geecache
+  # Note: This schedule is for testing purposes. In production, adjust or remove.
+  # '@every 2m' means kill one pod every 2 minutes to test resilience.
+  scheduler:
+    cron: '@every 2m'
+  duration: '30s'

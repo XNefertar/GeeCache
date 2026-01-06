@@ -1,0 +1,17 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: geecache-network-partition
+  namespace: default
+spec:
+  action: partition
+  mode: one
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: geecache
+  direction: both
+  duration: '2m'
+  scheduler:
+    cron: '@every 10m'

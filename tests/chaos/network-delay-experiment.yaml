@@ -1,0 +1,20 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: geecache-network-delay
+  namespace: default
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: geecache
+  delay:
+    latency: '100ms'
+    correlation: '50'
+    jitter: '10ms'
+  duration: '3m'
+  scheduler:
+    cron: '@every 5m'
