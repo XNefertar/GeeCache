@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"context"
 	"fmt"
 	pb "geecache/geecachepb"
 	"testing"
@@ -14,7 +15,7 @@ type mockPeerGetter struct {
 	calls int
 }
 
-func (m *mockPeerGetter) Get(in *pb.Request, out *pb.Response) error {
+func (m *mockPeerGetter) Get(ctx context.Context, in *pb.Request, out *pb.Response) error {
 	m.calls++
 	if in.Key != m.key {
 		return fmt.Errorf("key mismatch")
@@ -23,7 +24,7 @@ func (m *mockPeerGetter) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
-func (m *mockPeerGetter) Remove(in *pb.Request) error {
+func (m *mockPeerGetter) Remove(ctx context.Context, in *pb.Request) error {
 	return nil
 }
 
@@ -55,7 +56,7 @@ func TestHotCacheProtection(t *testing.T) {
 
 	// Create Group
 	// Use a getter that fails to ensure we are hitting the peer
-	getter := GetterFunc(func(key string) ([]byte, error) {
+	getter := GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("should not be called")
 	})
 
@@ -71,7 +72,7 @@ func TestHotCacheProtection(t *testing.T) {
 	}
 
 	// 2. First Request - Should hit the peer
-	v, err := g.Get(key)
+	v, err := g.Get(context.Background(), key)
 	if err != nil {
 		t.Fatalf("failed to get key: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestHotCacheProtection(t *testing.T) {
 	}
 
 	// 3. Second Request - Should hit the hotCache (no peer call)
-	v, err = g.Get(key)
+	v, err = g.Get(context.Background(), key)
 	if err != nil {
 		t.Fatalf("failed to get key: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestHotCacheProtection(t *testing.T) {
 	time.Sleep(6 * time.Second)
 
 	// 5. Third Request - Should hit the peer again
-	v, err = g.Get(key)
+	v, err = g.Get(context.Background(), key)
 	if err != nil {
 		t.Fatalf("failed to get key: %v", err)
 	}

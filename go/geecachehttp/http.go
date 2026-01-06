@@ -1,6 +1,7 @@
 package geecachehttp
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	"geecache/consistenthash"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -43,6 +46,11 @@ func (p *HTTPPool) Log(format string, v ...interface{}) {
 
 // ServeHTTP handles all http requests
 func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/metrics" {
+		promhttp.Handler().ServeHTTP(w, r)
+		return
+	}
+
 	if !strings.HasPrefix(r.URL.Path, p.basePath) {
 		http.Error(w, "HTTPool serving unexpected path: "+r.URL.Path, http.StatusBadRequest)
 		return
@@ -71,7 +79,7 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view, err := group.Get(key)
+	view, err := group.Get(r.Context(), key)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -91,14 +99,20 @@ type httpGetter struct {
 	baseURL string
 }
 
-func (h *httpGetter) Get(in *pb.Request, out *pb.Response) error {
+func (h *httpGetter) Get(ctx context.Context, in *pb.Request, out *pb.Response) error {
 	u := fmt.Sprintf(
 		"%v%v/%v",
 		h.baseURL,
 		url.QueryEscape(in.Group),
 		url.QueryEscape(in.Key),
 	)
-	res, err := http.Get(u)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	res, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -120,18 +134,19 @@ func (h *httpGetter) Get(in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
-func (h *httpGetter) Remove(in *pb.Request) error {
+func (h *httpGetter) Remove(ctx context.Context, in *pb.Request) error {
 	u := fmt.Sprintf(
 		"%v%v/%v",
 		h.baseURL,
 		url.QueryEscape(in.Group),
 		url.QueryEscape(in.Key),
 	)
-	req, err := http.NewRequest(http.MethodDelete, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
 	if err != nil {
 		return err
 	}
-	res, err := http.DefaultClient.Do(req)
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	res, err := client.Do(req)
 	if err != nil {
 		return err
 	}

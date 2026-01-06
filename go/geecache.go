@@ -4,20 +4,27 @@ import (
 	"fmt"
 	pb "geecache/geecachepb"
 	"geecache/mq"
+	"geecache/observability"
 	"geecache/singleflight"
 	"log"
 	"sync"
 	"time"
+
+	"context"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Getter interface {
-	Get(key string) ([]byte, error)
+	Get(ctx context.Context, key string) ([]byte, error)
 }
 
-type GetterFunc func(key string) ([]byte, error)
+type GetterFunc func(ctx context.Context, key string) ([]byte, error)
 
-func (f GetterFunc) Get(key string) ([]byte, error) {
-	return f(key)
+func (f GetterFunc) Get(ctx context.Context, key string) ([]byte, error) {
+	return f(ctx, key)
 }
 
 type Setter interface {
@@ -151,9 +158,16 @@ func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption)
 	defer mu.Unlock()
 
 	// Use factory to initialize sharded cache
-	c := newCache(cacheBytes)
+	c := newCache(cacheBytes, func(key string, value ByteView) {
+		observability.CacheEvictionsTotal.WithLabelValues(name, "main").Inc()
+	})
+	observability.CacheCapacityBytes.WithLabelValues(name, "main").Set(float64(cacheBytes))
+
 	// Initialize hotCache with 1/8th of the capacity
-	hc := newCache(cacheBytes / 8)
+	hc := newCache(cacheBytes/8, func(key string, value ByteView) {
+		observability.CacheEvictionsTotal.WithLabelValues(name, "hot").Inc()
+	})
+	observability.CacheCapacityBytes.WithLabelValues(name, "hot").Set(float64(cacheBytes / 8))
 
 	options := &GroupOptions{
 		MainCacheTTL: 0,
@@ -186,24 +200,43 @@ func GetGroup(name string) *Group {
 }
 
 // Get value for a key from cache
-func (g *Group) Get(key string) (ByteView, error) {
+func (g *Group) Get(ctx context.Context, key string) (ByteView, error) {
 	if key == "" {
 		return ByteView{}, fmt.Errorf("key is required")
 	}
 
+	// Observability
+	start := time.Now()
+	defer func() {
+		observability.CacheRequestDuration.WithLabelValues(g.name, "get").Observe(time.Since(start).Seconds())
+	}()
+
+	tr := otel.Tracer("geecache")
+	ctx, span := tr.Start(ctx, "Group.Get", trace.WithAttributes(attribute.String("key", key)))
+	defer span.End()
+
+	observability.CacheRequestsTotal.WithLabelValues(g.name, "total").Inc()
+
 	// 1. Check Hot Cache (L1) - Client-side caching for hot keys
 	if v, ok := g.hotCache.get(key); ok {
+		observability.CacheRequestsTotal.WithLabelValues(g.name, "hit_l1").Inc()
+		span.SetAttributes(attribute.String("cache_hit", "l1"))
 		// log.Println("[GeeCache] hotCache hit")
 		return v, nil
 	}
 
 	// 2. Check Main Cache (L2) - Authoritative cache for this node
 	if v, ok := g.mainCache.get(key); ok {
+		observability.CacheRequestsTotal.WithLabelValues(g.name, "hit_l2").Inc()
+		span.SetAttributes(attribute.String("cache_hit", "l2"))
 		// log.Println("[GeeCache] hit")
 		return v, nil
 	}
 
-	return g.load(key)
+	observability.CacheRequestsTotal.WithLabelValues(g.name, "miss").Inc()
+	span.SetAttributes(attribute.String("cache_hit", "miss"))
+
+	return g.load(ctx, key)
 }
 
 func (g *Group) Set(key string, value []byte, strategy WriteStrategy) error {
@@ -286,7 +319,7 @@ func (g *Group) Remove(key string) error {
 					Group: g.name,
 					Key:   key,
 				}
-				p.Remove(req)
+				p.Remove(context.Background(), req)
 			}(peer)
 		}
 		wg.Wait()
@@ -294,11 +327,11 @@ func (g *Group) Remove(key string) error {
 	return nil
 }
 
-func (g *Group) load(key string) (value ByteView, err error) {
+func (g *Group) load(ctx context.Context, key string) (value ByteView, err error) {
 	viewi, err := g.loader.Do(key, func() (interface{}, error) {
 		if g.peers != nil {
 			if peer, ok := g.peers.PickPeer(key); ok {
-				if value, err := g.getFromPeer(peer, key); err == nil {
+				if value, err := g.getFromPeer(ctx, peer, key); err == nil {
 					// Hot Key Protection: Cache remote value locally for a short time
 					g.populateHotCache(key, value)
 					return value, nil
@@ -307,7 +340,7 @@ func (g *Group) load(key string) (value ByteView, err error) {
 			}
 		}
 
-		return g.getLocally(key)
+		return g.getLocally(ctx, key)
 	})
 
 	if err == nil {
@@ -316,20 +349,20 @@ func (g *Group) load(key string) (value ByteView, err error) {
 	return
 }
 
-func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+func (g *Group) getFromPeer(ctx context.Context, peer PeerGetter, key string) (ByteView, error) {
 	req := &pb.Request{
 		Group: g.name,
 		Key:   key,
 	}
 	res := &pb.Response{}
-	err := peer.Get(req, res)
+	err := peer.Get(ctx, req, res)
 	if err != nil {
 		return ByteView{}, err
 	}
 	return ByteView{b: res.Value}, nil
 }
 
-func (g *Group) getLocally(key string) (ByteView, error) {
+func (g *Group) getLocally(ctx context.Context, key string) (ByteView, error) {
 	// 1. Try L3 (Central Cache)
 	if g.centralCache != nil {
 		if v, err := g.centralCache.Get(key); err == nil && v != nil {
@@ -340,7 +373,7 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 	}
 
 	// 2. Fallback to Source (DB)
-	bytes, err := g.getter.Get(key)
+	bytes, err := g.getter.Get(ctx, key)
 	if err != nil {
 		return ByteView{}, err
 	}

@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -26,7 +27,7 @@ func randomString(n int) string {
 // 直接测试 cache 结构体，绕过 Group 和 Singleflight
 func BenchmarkCoreAddParallel(b *testing.B) {
 	// 初始化分片缓存，分配足够大的内存避免频繁淘汰
-	c := newCache(int64(b.N * ValueSize))
+	c := newCache(int64(b.N*ValueSize), nil)
 
 	val := ByteView{b: []byte(randomString(ValueSize))}
 
@@ -45,7 +46,7 @@ func BenchmarkCoreAddParallel(b *testing.B) {
 
 // 2. 基准测试：底层存储引擎的并发读取 (测试 Sharding + RWMutex 效果)
 func BenchmarkCoreGetParallel(b *testing.B) {
-	c := newCache(int64(1024 * 1024 * 1024)) // 1GB
+	c := newCache(int64(1024*1024*1024), nil) // 1GB
 	val := ByteView{b: []byte(randomString(ValueSize))}
 
 	// 预填充数据
@@ -70,7 +71,7 @@ func BenchmarkCoreGetParallel(b *testing.B) {
 // 包含 Singleflight 检查、Group 路由等开销
 func BenchmarkGroupGetHitParallel(b *testing.B) {
 	// 模拟 Getter
-	getter := GetterFunc(func(key string) ([]byte, error) {
+	getter := GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		return []byte(randomString(ValueSize)), nil
 	})
 
@@ -81,7 +82,7 @@ func BenchmarkGroupGetHitParallel(b *testing.B) {
 	for i := 0; i < 10000; i++ {
 		keys[i] = fmt.Sprintf("key-%d", i)
 		// 触发一次加载
-		_, _ = g.Get(keys[i])
+		_, _ = g.Get(context.Background(), keys[i])
 	}
 
 	b.ResetTimer()
@@ -89,7 +90,7 @@ func BenchmarkGroupGetHitParallel(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			key := keys[i%10000]
-			_, _ = g.Get(key)
+			_, _ = g.Get(context.Background(), key)
 			i++
 		}
 	})
@@ -98,7 +99,7 @@ func BenchmarkGroupGetHitParallel(b *testing.B) {
 // 4. 基准测试：Group 层面的完整流程 (Miss 场景 - 模拟缓存击穿保护)
 // 这将测试 Singleflight 的合并效果
 func BenchmarkGroupGetMissParallel(b *testing.B) {
-	getter := GetterFunc(func(key string) ([]byte, error) {
+	getter := GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		// 模拟慢查询
 		time.Sleep(time.Millisecond)
 		// 🆕 返回错误，防止结果被缓存
@@ -115,7 +116,7 @@ func BenchmarkGroupGetMissParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			// 所有并发请求都打同一个 Key，测试 Singleflight
-			_, _ = g.Get(key)
+			_, _ = g.Get(context.Background(), key)
 		}
 	})
 }

@@ -1,6 +1,9 @@
 package geecache
 
-import pb "geecache/geecachepb"
+import (
+	"context"
+	pb "geecache/geecachepb"
+)
 
 type PeerPicker interface {
 	PickPeer(key string) (peer PeerGetter, ok bool)
@@ -8,6 +11,6 @@ type PeerPicker interface {
 }
 
 type PeerGetter interface {
-	Get(in *pb.Request, out *pb.Response) error
-	Remove(in *pb.Request) error
+	Get(ctx context.Context, in *pb.Request, out *pb.Response) error
+	Remove(ctx context.Context, in *pb.Request) error
 }

@@ -71,3 +71,7 @@ go/bench_main
 
 # --- 9. VS Code Counter 文件(VS Code Counter Files) ---
 .VSCodeCounter/
+
+# Ignore compiled binaries / 忽略编译后的二进制文件
+go/observability_demo
+go/server

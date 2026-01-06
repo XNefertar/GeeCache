@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	"geecache/geecachegrpc"
@@ -24,7 +25,7 @@ func setupBenchGroup() *geecache.Group {
 		return g
 	}
 	g, _ := geecache.NewGroup("bench_transport", 2<<10, geecache.GetterFunc(
-		func(key string) ([]byte, error) {
+		func(ctx context.Context, key string) ([]byte, error) {
 			return []byte("value-1234567890"), nil
 		}))
 	return g
@@ -63,7 +64,7 @@ func BenchmarkTransport_HTTP(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := peer.Get(req, res); err != nil {
+		if err := peer.Get(context.Background(), req, res); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -101,7 +102,7 @@ func BenchmarkTransport_GRPC(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := peer.Get(req, res); err != nil {
+		if err := peer.Get(context.Background(), req, res); err != nil {
 			b.Fatal(err)
 		}
 	}

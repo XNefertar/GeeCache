@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -59,14 +60,14 @@ func NewClientWrapper(group *Group, l0TTL time.Duration) *ClientWrapper {
 	}
 }
 
-func (c *ClientWrapper) Get(key string) (ByteView, error) {
+func (c *ClientWrapper) Get(ctx context.Context, key string) (ByteView, error) {
 	// 1. Check L0
 	if v, ok := c.l0.Get(key); ok {
 		return ByteView{b: cloneBytes(v)}, nil
 	}
 
 	// 2. Check GeeCache (L1 + L2 + L3)
-	v, err := c.group.Get(key)
+	v, err := c.group.Get(ctx, key)
 	if err != nil {
 		return ByteView{}, err
 	}

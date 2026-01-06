@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"context"
 	"geecache/mq"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 
 func TestMQIntegration(t *testing.T) {
 	// 1. Setup Group
-	getter := GetterFunc(func(key string) ([]byte, error) {
+	getter := GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		return []byte("value"), nil
 	})
 	g, err := NewGroup("mq_test", 2<<20, getter)
@@ -25,7 +26,7 @@ func TestMQIntegration(t *testing.T) {
 
 	// 3. Populate Cache
 	key := "key1"
-	_, err = g.Get(key) // Load into L2
+	_, err = g.Get(context.Background(), key) // Load into L2
 	if err != nil {
 		t.Fatal(err)
 	}

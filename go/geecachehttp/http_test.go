@@ -1,6 +1,7 @@
 package geecachehttp
 
 import (
+	"context"
 	"fmt"
 	"geecache"
 	pb "geecache/geecachepb"
@@ -20,7 +21,7 @@ func TestHTTPPoolServeHTTP(t *testing.T) {
 
 	groupName := "scores_test"
 	_, err := geecache.NewGroup(groupName, 2<<10, geecache.GetterFunc(
-		func(key string) ([]byte, error) {
+		func(ctx context.Context, key string) ([]byte, error) {
 			t.Logf("[MockDB] searching key %s", key)
 			if v, ok := db[key]; ok {
 				return []byte(v), nil

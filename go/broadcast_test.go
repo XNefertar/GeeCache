@@ -1,6 +1,7 @@
 package geecache
 
 import (
+	"context"
 	pb "geecache/geecachepb"
 	"testing"
 )
@@ -10,11 +11,11 @@ type mockBroadcastPeer struct {
 	removedKeys []string
 }
 
-func (m *mockBroadcastPeer) Get(in *pb.Request, out *pb.Response) error {
+func (m *mockBroadcastPeer) Get(ctx context.Context, in *pb.Request, out *pb.Response) error {
 	return nil
 }
 
-func (m *mockBroadcastPeer) Remove(in *pb.Request) error {
+func (m *mockBroadcastPeer) Remove(ctx context.Context, in *pb.Request) error {
 	m.removedKeys = append(m.removedKeys, in.Key)
 	return nil
 }
@@ -43,7 +44,7 @@ func TestBroadcastInvalidation(t *testing.T) {
 	peer2 := &mockBroadcastPeer{}
 	picker := &mockBroadcastPicker{peers: []*mockBroadcastPeer{peer1, peer2}}
 
-	g, err := NewGroup("broadcastTest", 2<<20, GetterFunc(func(key string) ([]byte, error) {
+	g, err := NewGroup("broadcastTest", 2<<20, GetterFunc(func(ctx context.Context, key string) ([]byte, error) {
 		return []byte("value"), nil
 	}))
 	if err != nil {
@@ -55,7 +56,7 @@ func TestBroadcastInvalidation(t *testing.T) {
 
 	// 2. Populate Cache
 	key := "key1"
-	_, err = g.Get(key) // Load into cache
+	_, err = g.Get(context.Background(), key) // Load into cache
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
