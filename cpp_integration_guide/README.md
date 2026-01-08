@@ -41,7 +41,9 @@ service GroupCache {
 
 ### 3. 生成 C++ 代码
 
-在项目根目录下执行：
+在项目根目录下执行以下命令:
+
+> **注意**: 确保在仓库根目录执行,并且已安装 `protoc` 和 `grpc_cpp_plugin`
 
 ```bash
 mkdir -p cpp_client/generated

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"geecache"
+	"geecache/pkg/mockdb"
 	"log"
 	"math/rand"
 	"time"
@@ -17,40 +18,14 @@ const (
 	TestRequestCount = 1000                  // 测试请求总数
 )
 
-// MockDB 模拟的大型数据库
-type MockDB struct {
-	data map[string][]byte
-}
-
-func NewMockDB() *MockDB {
-	db := &MockDB{data: make(map[string][]byte, DBSize)}
-	// 为了节省初始化时间和内存，我们生成一个随机 buffer，然后复用
-	// 在真实场景中每个 key 的 value 不同，但这对测试缓存命中率逻辑无影响
-	val := make([]byte, ValueSize)
-	rand.Read(val)
-
-	for i := 0; i < DBSize; i++ {
-		key := fmt.Sprintf("key_%d", i)
-		db.data[key] = val
-	}
-	return db
-}
-
-// Get 模拟数据库读取，带有人工延迟
-func (db *MockDB) Get(key string) ([]byte, error) {
-	// 核心：模拟耗时操作 (I/O)
-	time.Sleep(DBLatency)
-
-	if v, ok := db.data[key]; ok {
-		return v, nil
-	}
-	return nil, fmt.Errorf("not found")
-}
-
 func main() {
 	// 1. 初始化数据库
 	fmt.Printf("1. [Init] 正在构建包含 %d 条数据的模拟数据库 (单条数据 %d 字节)...\n", DBSize, ValueSize)
-	db := NewMockDB()
+	db := mockdb.New(mockdb.Config{
+		Size:      DBSize,
+		ValueSize: ValueSize,
+		Latency:   DBLatency,
+	})
 	fmt.Println("   [Init] 数据库构建完成")
 
 	// 2. 初始化缓存
