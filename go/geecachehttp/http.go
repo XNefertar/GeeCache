@@ -73,6 +73,17 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodPut {
+		bytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		group.DirectSet(key, bytes)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if r.Method == http.MethodDelete {
 		group.RemoveLocal(key)
 		w.WriteHeader(http.StatusOK)

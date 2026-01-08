@@ -161,9 +161,10 @@ func (g *Group) RunCleanup(interval time.Duration) {
 // cacheBytes: max bytes of the cache.
 // getter: callback to get data from source if cache miss.
 func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption) (*Group, error) {
-	if getter == nil {
-		return nil, fmt.Errorf("nil Getter")
-	}
+	// Getter is optional for Cache-Aside pattern
+	// if getter == nil {
+	// 	return nil, fmt.Errorf("nil Getter")
+	// }
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -383,6 +384,9 @@ func (g *Group) getLocally(ctx context.Context, key string) (ByteView, error) {
 	}
 
 	// 2. Fallback to Source (DB)
+	if g.getter == nil {
+		return ByteView{}, fmt.Errorf("key not found (no getter configured)")
+	}
 	bytes, err := g.getter.Get(ctx, key)
 	if err != nil {
 		return ByteView{}, err
@@ -398,6 +402,11 @@ func (g *Group) getLocally(ctx context.Context, key string) (ByteView, error) {
 
 	g.populateCache(key, value)
 	return value, nil
+}
+
+// DirectSet allows populating the cache manually (Cache-Aside pattern).
+func (g *Group) DirectSet(key string, value []byte) {
+	g.populateCache(key, ByteView{b: cloneBytes(value)})
 }
 
 func (g *Group) populateCache(key string, value ByteView) {
