@@ -11,7 +11,11 @@ import (
 
 func main() {
 	var port int
+	var groupName string
+	var cacheBytes int64
+
 	flag.IntVar(&port, "port", 9999, "GeeCache server port")
+	flag.StringVar(&groupName, "group", "default", "Cache group name")
 	flag.Parse()
 
 	// 监听地址 (注意：在容器或云环境中可能需要改为 0.0.0.0)
@@ -21,18 +25,14 @@ func main() {
 	// self 参数主要用于节点间通信时的标识，这里直接用地址
 	peers := geecachehttp.NewHTTPPool(addr)
 
-	// 初始化核心 Cache Group
-	// Name: "default"
-	// Capacity: 1GB
-	// Getter: nil (因为是独立服务，没有业务逻辑，只负责存取)
-	_, err := geecache.NewGroup("default", 1<<30, nil)
+	_, err := geecache.NewGroup(groupName, cacheBytes, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	log.Printf("Starting independent GeeCache server at %s...", addr)
-	log.Printf(" - Cache Group: 'default'")
-	log.Printf(" - Max Bytes:   1GB")
+	log.Printf(" - Cache Group: '%s'", groupName)
+	log.Printf(" - Max Bytes:   %d bytes", cacheBytes)
 	log.Printf(" - Access URL:  http://localhost:%d/_geecache/default/<key>", port)
 
 	// 启动 HTTP 服务
