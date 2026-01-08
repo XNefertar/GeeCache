@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"geecache"
 	"geecache/geecachehttp"
+	healthpkg "geecache/pkg/health"
+	k8spkg "geecache/pkg/k8s"
+	lifecyclepkg "geecache/pkg/lifecycle"
 	"log"
 	"net/http"
 	"os"
@@ -65,11 +68,11 @@ func main() {
 	}
 
 	// Create health check
-	health := geecache.NewHealthCheck()
+	health := healthpkg.NewHealthCheck()
 	health.RegisterGroup(group)
 
 	// Setup shutdown manager
-	shutdownMgr := geecache.NewShutdownManager()
+	shutdownMgr := lifecyclepkg.NewShutdownManager()
 
 	// Get pod info
 	podName := getEnv("POD_NAME", "")
@@ -87,7 +90,7 @@ func main() {
 		dnsName := fmt.Sprintf("%s.%s.svc.cluster.local", *serviceName, *namespace)
 		log.Printf("Using Kubernetes service discovery: %s", dnsName)
 
-		k8sPicker := geecache.NewK8sPeerPicker(dnsName, addr, *port)
+		k8sPicker := k8spkg.NewK8sPeerPicker(dnsName, addr, *port)
 		if err := group.RegisterPeers(k8sPicker); err != nil {
 			log.Fatalf("Failed to register K8s peers: %v", err)
 		}
@@ -155,7 +158,7 @@ func main() {
 	shutdownMgr.WaitForShutdown()
 }
 
-func startAPIServer(apiPort string, group *geecache.Group, health *geecache.HealthCheck) {
+func startAPIServer(apiPort string, group *geecache.Group, health *healthpkg.HealthCheck) {
 	mux := http.NewServeMux()
 
 	// API endpoint

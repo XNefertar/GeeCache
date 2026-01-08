@@ -1,4 +1,4 @@
-package geecache
+package lifecycle
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func NewShutdownManager() *ShutdownManager {
 			timeout = time.Duration(t) * time.Second
 		}
 	}
-	
+
 	return &ShutdownManager{
 		servers:       make([]*http.Server, 0),
 		peerPickers:   make([]interface{ Stop() }, 0),
@@ -76,7 +76,7 @@ func (sm *ShutdownManager) WaitForShutdown() {
 
 	// Shutdown in order: custom functions, peer pickers, then servers
 	sm.shutdown(ctx)
-	
+
 	log.Println("[ShutdownManager] Graceful shutdown completed")
 }
 

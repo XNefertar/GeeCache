@@ -89,6 +89,16 @@ var (
 	groups = make(map[string]*Group)
 )
 
+// Name returns the name of the group.
+func (g *Group) Name() string {
+	return g.name
+}
+
+// HasPeers returns whether the group has configured peers.
+func (g *Group) HasPeers() bool {
+	return g.peers != nil
+}
+
 // RegisterPeers registers a PeerPicker for choosing remote peer.
 func (g *Group) RegisterPeers(peers PeerPicker) error {
 	if g.peers != nil {

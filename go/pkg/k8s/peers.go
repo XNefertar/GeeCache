@@ -1,8 +1,9 @@
-package geecache
+package k8s
 
 import (
 	"context"
 	"fmt"
+	"geecache"
 	"geecache/consistenthash"
 	pb "geecache/geecachepb"
 	"io"
@@ -147,7 +148,7 @@ func (p *K8sPeerPicker) refreshLoop() {
 }
 
 // PickPeer selects a peer based on the key
-func (p *K8sPeerPicker) PickPeer(key string) (PeerGetter, bool) {
+func (p *K8sPeerPicker) PickPeer(key string) (geecache.PeerGetter, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -160,11 +161,11 @@ func (p *K8sPeerPicker) PickPeer(key string) (PeerGetter, bool) {
 }
 
 // GetAllPeers returns all known peers
-func (p *K8sPeerPicker) GetAllPeers() []PeerGetter {
+func (p *K8sPeerPicker) GetAllPeers() []geecache.PeerGetter {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	var peers []PeerGetter
+	var peers []geecache.PeerGetter
 	for _, peer := range p.peers.List() {
 		if peer != p.self {
 			if getter, ok := p.httpGetters[peer]; ok && getter.isHealthy() {
@@ -255,5 +256,5 @@ func (g *k8sHTTPGetter) setHealthy(healthy bool) {
 	g.healthy = healthy
 }
 
-var _ PeerPicker = (*K8sPeerPicker)(nil)
-var _ PeerGetter = (*k8sHTTPGetter)(nil)
+var _ geecache.PeerPicker = (*K8sPeerPicker)(nil)
+var _ geecache.PeerGetter = (*k8sHTTPGetter)(nil)

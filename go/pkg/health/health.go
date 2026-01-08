@@ -1,7 +1,8 @@
-package geecache
+package health
 
 import (
 	"encoding/json"
+	"geecache"
 	"net/http"
 	"sync"
 	"time"
@@ -9,9 +10,9 @@ import (
 
 // HealthCheck provides health checking endpoints for Kubernetes probes
 type HealthCheck struct {
-	ready   bool
-	mu      sync.RWMutex
-	groups  map[string]*Group
+	ready     bool
+	mu        sync.RWMutex
+	groups    map[string]*geecache.Group
 	startTime time.Time
 }
 
@@ -28,7 +29,7 @@ type HealthStatus struct {
 func NewHealthCheck() *HealthCheck {
 	return &HealthCheck{
 		ready:     false,
-		groups:    make(map[string]*Group),
+		groups:    make(map[string]*geecache.Group),
 		startTime: time.Now(),
 	}
 }
@@ -41,10 +42,10 @@ func (h *HealthCheck) SetReady(ready bool) {
 }
 
 // RegisterGroup registers a cache group for health monitoring
-func (h *HealthCheck) RegisterGroup(g *Group) {
+func (h *HealthCheck) RegisterGroup(g *geecache.Group) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.groups[g.name] = g
+	h.groups[g.Name()] = g
 }
 
 // LivenessHandler handles Kubernetes liveness probe (is the app running?)
@@ -95,11 +96,11 @@ func (h *HealthCheck) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	ready := h.ready
 	groups := make([]string, 0, len(h.groups))
 	details := make(map[string]string)
-	
+
 	for name, g := range h.groups {
 		groups = append(groups, name)
 		// Add basic group info
-		if g.peers != nil {
+		if g.HasPeers() {
 			details[name+"_peers"] = "configured"
 		}
 	}
