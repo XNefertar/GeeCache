@@ -405,8 +405,15 @@ func (g *Group) getLocally(ctx context.Context, key string) (ByteView, error) {
 }
 
 // DirectSet allows populating the cache manually (Cache-Aside pattern).
-func (g *Group) DirectSet(key string, value []byte) {
+func (g *Group) DirectSet(key string, value []byte) error {
+	if key == "" {
+		return fmt.Errorf("key is required")
+	}
+	if value == nil {
+		return fmt.Errorf("value is required")
+	}
 	g.populateCache(key, ByteView{b: cloneBytes(value)})
+	return nil
 }
 
 func (g *Group) populateCache(key string, value ByteView) {
