@@ -4,13 +4,15 @@
 #include <chrono>
 #include <fstream>
 #include "core/sstable/table_builder.h"
+#include "core/sstable/table.h"
+#include "util/merging_iterator.h"
 
 namespace lsm {
 
 namespace fs = std::filesystem;
 
 DB::DB(const std::string& path, const Options& options) 
-    : _path(path), _options(options), _stop_sync(false) {
+    : _path(path), _options(options), _stop_sync(false), _stop_compaction(false) {
     if (!fs::exists(path)) {
         fs::create_directories(path);
     }
@@ -28,15 +30,24 @@ DB::DB(const std::string& path, const Options& options)
     if (!_options.sync) {
         _sync_thread = std::thread(&DB::BackgroundSync, this);
     }
+
+    _compaction_thread = std::thread(&DB::BackgroundCompaction, this);
     
     std::cout << "[C++] DB opened at " << _path << std::endl;
 }
 
 DB::~DB() {
     _stop_sync = true;
+    _stop_compaction = true;
+    _compaction_cv.notify_all();
+
     if (_sync_thread.joinable()) {
         _sync_thread.join();
     }
+    if (_compaction_thread.joinable()) {
+        _compaction_thread.join();
+    }
+
     // Force final sync on close
     if (_wal) {
         _wal->Sync();
@@ -64,10 +75,10 @@ bool DB::Get(const std::string& key, std::string* value) {
         return true;
     }
     // Check SSTables via Version
-    int result = _versions->current()->Get(key, value);
-    if (result == 1) return true; // Found
-    if (result == 2) return false; // Deleted
-    return false; // Not found
+    Table::Status result = _versions->current()->Get(key, value);
+    if (result == Table::kFound) return true; // Found
+    if (result == Table::kDeleted) return false; // Deleted
+    return Table::kNotFound; // Not found
 }
 
 void DB::Delete(const std::string& key) {
@@ -133,6 +144,8 @@ void DB::Flush() {
     _wal = std::make_unique<WAL>(wal_path);
     
     std::cout << "[C++] Flushed MemTable to " << fname << std::endl;
+    
+    MaybeScheduleCompaction();
 }
 
 void DB::BackgroundSync() {
@@ -202,6 +215,109 @@ void DB::Recover(const std::string& wal_path) {
     if (fs::file_size(wal_path) != valid_pos) {
         fs::resize_file(wal_path, valid_pos);
         std::cout << "[C++] Recovered WAL, truncated to " << valid_pos << " bytes" << std::endl;
+    }
+}
+
+void DB::MaybeScheduleCompaction() {
+    _compaction_cv.notify_all();
+}
+
+void DB::BackgroundCompaction() {
+    while (!_stop_compaction) {
+        std::unique_ptr<VersionSet::Compaction> c;
+        std::vector<Iterator*> iterators;
+        
+        {
+            std::unique_lock<std::mutex> cv_lock(_compaction_mutex);
+            _compaction_cv.wait(cv_lock, [this]{ 
+                return _stop_compaction || (_versions && _versions->current()); // Simple check
+            });
+            if (_stop_compaction) break;
+        }
+        
+        // Try pick compaction
+        {
+            std::lock_guard<std::mutex> db_lock(_mutex);
+            _versions->current()->Finalize();
+            if (_versions->current()->_compaction_score >= 1.0) {
+                c = _versions->PickCompaction();
+                if (c) {
+                    std::cout << "[Compaction] Picked Level " << c->level << " (" << c->inputs[0].size() 
+                               << " files) to merge with " << c->inputs[1].size() << " files in next level." << std::endl;
+                     
+                    for (const auto& f : c->inputs[0]) {
+                        auto t = _versions->current()->GetTable(f.number);
+                        if (t) iterators.push_back(t->NewIterator());
+                    }
+                    for (const auto& f : c->inputs[1]) {
+                        auto t = _versions->current()->GetTable(f.number);
+                        if (t) iterators.push_back(t->NewIterator());
+                    }
+                }
+            }
+        }
+        
+        if (!c || iterators.empty()) {
+            // Nothing to do, wait again (or sleep briefly if we woke up spuriously)
+             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+        
+        // Merge
+        MergingIterator* merge_iter = new MergingIterator(iterators);
+        merge_iter->SeekToFirst();
+        
+        int file_num = _versions->NewFileNumber();
+        std::string fname = _path + "/" + std::to_string(file_num) + ".sst";
+        TableBuilder builder(fname);
+        
+        std::string smallest, largest;
+        bool first = true;
+        
+        while (merge_iter->Valid()) {
+            std::string key = merge_iter->Key();
+            std::string value = merge_iter->Value();
+            bool is_deleted = merge_iter->IsDeleted();
+            
+            // Skip duplicates (implied: first one is from lower level = newer)
+            merge_iter->Next();
+            while (merge_iter->Valid() && merge_iter->Key() == key) {
+                merge_iter->Next();
+            }
+            
+            if (first) { smallest = key; first = false; }
+            largest = key;
+            
+            builder.Add(key, value, is_deleted);
+        }
+        delete merge_iter;
+        builder.Finish();
+        
+        if (builder.FileSize() > 0) {
+            std::lock_guard<std::mutex> db_lock(_mutex);
+            Version* new_ver = new Version(*_versions->current());
+            
+            for (const auto& f : c->inputs[0]) new_ver->RemoveFile(c->level, f.number);
+            for (const auto& f : c->inputs[1]) new_ver->RemoveFile(c->level + 1, f.number);
+            
+            FileMetaData meta;
+            meta.number = file_num;
+            meta.file_size = builder.FileSize();
+            meta.smallest = smallest;
+            meta.largest = largest;
+            
+            new_ver->AddFile(c->level + 1, meta);
+            new_ver->SortL0();
+            
+            _versions->LogAndApply(new_ver);
+            
+            std::cout << "[Compaction] Committed L" << c->level << "->L" << c->level+1 
+                      << " " << builder.FileSize() << " bytes." << std::endl;
+        } else {
+             fs::remove(fname);
+        }
+        
+        MaybeScheduleCompaction(); // Check if more needed
     }
 }
 

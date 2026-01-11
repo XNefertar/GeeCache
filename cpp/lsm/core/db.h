@@ -8,6 +8,8 @@
 #include "wal.h"
 #include "core/version/version.h"
 
+#include <condition_variable>
+
 namespace lsm {
 
 struct Options {
@@ -34,6 +36,13 @@ private:
     std::thread _sync_thread;
     std::atomic<bool> _stop_sync;
     void BackgroundSync();
+    
+    std::thread _compaction_thread;
+    std::atomic<bool> _stop_compaction;
+    std::condition_variable _compaction_cv;
+    std::mutex _compaction_mutex;
+    void BackgroundCompaction();
+    void MaybeScheduleCompaction();
     
     void Recover(const std::string& wal_path);
     void Flush();

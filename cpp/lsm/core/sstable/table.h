@@ -4,6 +4,7 @@
 #include <fstream>
 #include <memory>
 #include "util/bloom_filter.h"
+#include "core/iterator.h"
 
 namespace lsm {
 
@@ -27,16 +28,17 @@ public:
     // Result: 0 = Not Found, 1 = Found, 2 = Deleted
     Status Get(const std::string& key, std::string* value);
 
-    class Iterator {
+    class Iterator : public lsm::Iterator {
     public:
         Iterator(Table* table);
-        bool Valid() const;
-        void SeekToFirst();
-        void Seek(const std::string& target);
-        void Next();
-        std::string Key() const;
-        std::string Value() const;
-        bool IsDeleted() const; // Need to read type
+        // Implement lsm::Iterator
+        bool Valid() const override;
+        void SeekToFirst() override;
+        void Seek(const std::string& target) override;
+        void Next() override;
+        std::string Key() const override;
+        std::string Value() const override;
+        bool IsDeleted() const override;
     private:
         Table* _table;
         uint64_t _current_offset;
