@@ -83,9 +83,11 @@ Table::Status Version::Get(const std::string& key, std::string* value) {
         for (auto it = _files[0].rbegin(); it != _files[0].rend(); ++it) {
             if (key >= it->smallest && key <= it->largest) {
                 std::shared_ptr<Table> table = GetTable(it->number);
-                Table::Status status = table->Get(key, value);
-                if (status != Table::kNotFound) {
-                    return status;
+                if (table) {
+                    Table::Status status = table->Get(key, value);
+                    if (status != Table::kNotFound) {
+                        return status;
+                    }
                 }
             }
         }
