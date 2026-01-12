@@ -254,14 +254,32 @@ void DB::BackgroundCompaction() {
                 if (c) {
                     std::cout << "[Compaction] Picked Level " << c->level << " (" << c->inputs[0].size() 
                                << " files) to merge with " << c->inputs[1].size() << " files in next level." << std::endl;
-                     
-                    for (const auto& f : c->inputs[0]) {
-                        auto t = _versions->current()->GetTable(f.number);
-                        if (t) iterators.push_back(t->NewIterator());
+                    
+                    bool error = false;
+                    auto add_iterators = [&](const std::vector<FileMetaData>& files) {
+                        for (const auto& f : files) {
+                            auto t = _versions->current()->GetTable(f.number);
+                            if (!t) {
+                                std::cerr << "[Compaction Error] Failed to open table " << f.number 
+                                          << ". Aborting compaction." << std::endl;
+                                error = true;
+                                return;
+                            }
+                            iterators.push_back(t->NewIterator());
+                        }
+                    };
+
+                    add_iterators(c->inputs[0]);
+                    if (!error) {
+                        add_iterators(c->inputs[1]);
                     }
-                    for (const auto& f : c->inputs[1]) {
-                        auto t = _versions->current()->GetTable(f.number);
-                        if (t) iterators.push_back(t->NewIterator());
+                    
+                    if (error) {
+                        for (auto* it : iterators) {
+                            delete it;
+                        }
+                        iterators.clear();
+                        c.reset();
                     }
                 }
             }
