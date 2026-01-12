@@ -64,10 +64,14 @@ bool DB::Get(const std::string& key, std::string* value) {
         return true;
     }
     // Check SSTables via Version
-    int result = _versions->current()->Get(key, value);
-    if (result == 1) return true; // Found
-    if (result == 2) return false; // Deleted
-    return false; // Not found
+    Table::Status result = _versions->current()->Get(key, value);
+    if (result == Table::kFound) {
+        return true;
+    } else if (result == Table::kDeleted) {
+        value->clear();
+        return false;
+    }
+    return false;
 }
 
 void DB::Delete(const std::string& key) {

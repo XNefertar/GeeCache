@@ -24,7 +24,7 @@ public:
     
     // Look up key in the version's files
     // Returns: 0=NotFound, 1=Found, 2=Deleted
-    int Get(const std::string& key, std::string* value);
+    Table::Status Get(const std::string& key, std::string* value);
 
     std::vector<FileMetaData> GetFiles(int level) const;
     
