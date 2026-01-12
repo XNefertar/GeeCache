@@ -45,8 +45,8 @@ public:
         // Cache current fields
         std::string _key;
         std::string _value;
-        bool _is_deleted;
-        bool _valid;
+        bool _is_deleted{false};
+        bool _valid{false};
         
         void ParseCurrent();
     };
