@@ -8,9 +8,7 @@
 
 namespace lsm {
 
-class Table {
-    
-
+class Table : public std::enable_shared_from_this<Table> {
 public:
 
     enum Status {
@@ -30,7 +28,7 @@ public:
 
     class Iterator : public lsm::Iterator {
     public:
-        Iterator(Table* table);
+        Iterator(std::shared_ptr<Table> table);
         // Implement lsm::Iterator
         bool Valid() const override;
         void SeekToFirst() override;
@@ -40,7 +38,7 @@ public:
         std::string Value() const override;
         bool IsDeleted() const override;
     private:
-        Table* _table;
+        std::shared_ptr<Table> _table;
         uint64_t _current_offset;
         // Cache current fields
         std::string _key;

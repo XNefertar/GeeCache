@@ -152,11 +152,11 @@ Table::Status Table::Get(const std::string& key, std::string* value) {
 
 
 Table::Iterator* Table::NewIterator() {
-    return new Iterator(this);
+    return new Iterator(shared_from_this());
 }
 
 // Iterator Implementation
-Table::Iterator::Iterator(Table* table) : _table(table), _current_offset(0), _valid(false) {}
+Table::Iterator::Iterator(std::shared_ptr<Table> table) : _table(std::move(table)), _current_offset(0), _valid(false) {}
 
 bool Table::Iterator::Valid() const {
     return _valid;
