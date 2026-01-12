@@ -42,7 +42,6 @@ public:
     std::shared_ptr<Table> GetTable(int file_number) const;
 
 private:
-    // std::string _dbname; // Removed
     // For now, just support Level 0
     std::vector<FileMetaData> _files[7]; // 7 levels
     
