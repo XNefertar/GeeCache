@@ -41,7 +41,7 @@ private:
     std::atomic<bool> _stop_compaction;
     std::condition_variable _compaction_cv;
     std::mutex _compaction_mutex;
-    std::atomic<bool> _compaction_scheduled{false};
+    bool _compaction_scheduled{false};
 
     void BackgroundCompaction();
     void MaybeScheduleCompaction();
