@@ -10,7 +10,11 @@ std::shared_ptr<Table> TableCache::FindTable(int file_number) {
     
     auto it = _cache.find(file_number);
     if (it != _cache.end()) {
-        return it->second;
+        if (it->second) {
+            return it->second;
+        }
+        // Defensive: Remove stale nullptr from cache so we can retry open
+        _cache.erase(it);
     }
     
     std::string path = _dbname + "/" + std::to_string(file_number) + ".sst";
@@ -19,6 +23,7 @@ std::shared_ptr<Table> TableCache::FindTable(int file_number) {
         _cache[file_number] = table;
     } else {
         std::cerr << "TableCache failed to open: " << path << std::endl;
+        // Do not cache nullptr to allow retrying later
     }
     return table;
 }

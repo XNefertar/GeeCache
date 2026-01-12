@@ -1,5 +1,5 @@
 #include "version.h"
-#include "sstable/table.h"
+#include "core/sstable/table.h"
 #include <algorithm>
 #include <iostream>
 #include <filesystem>
