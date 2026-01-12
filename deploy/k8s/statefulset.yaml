@@ -62,12 +62,30 @@ spec:
       labels:
         app: geecache
     spec:
+      automountServiceAccountToken: false
       containers:
       - name: geecache
         # NOTE: For production, use a specific version tag instead of 'latest'
         # Example: image: geecache:v1.0.0 or use image digest
         image: geecache:latest
         imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001 # 匹配 Dockerfile 中创建的 UID
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            cpu: "100m"         # 请求 0.1 核 CPU
+            memory: "128Mi"     # 请求 128 MiB 内存
+            ephemeral-storage: "1Gi" # 请求 1 GiB 临时存储
+          limits:
+            cpu: "500m"         # 限制最多使用 0.5 核 CPU
+            memory: "256Mi"     # 限制最多使用 256 MiB 内存
+            ephemeral-storage: "2Gi" # 限制最多使用 2 GiB 临时存储
         ports:
         - containerPort: 8080
           name: cache

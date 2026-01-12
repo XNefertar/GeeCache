@@ -82,21 +82,43 @@ Table::Status Version::Get(const std::string& key, std::string* value) const {
             const FileMetaData* f = *(--it);
             if (key <= f->largest) {
                 std::shared_ptr<Table> table = GetTable(f->number);
-                if (table) {
-                    return table->Get(key, value);
+                if (table) { // Safety check
+                    Table::Status status = table->Get(key, value);
+                    if (status != Table::kNotFound) {
+                        return status;
+                    }
                 }
             }
         }
-        return Table::kNotFound;
+    } else {
+        // Search L0 files in reverse order (newest first)
+        // L0 files can overlap, so we must check all of them that might contain the key
+        for (auto it = _files[0].rbegin(); it != _files[0].rend(); ++it) {
+            if (key >= it->smallest && key <= it->largest) {
+                std::shared_ptr<Table> table = GetTable(it->number);
+                if (table) {
+                    Table::Status status = table->Get(key, value);
+                    if (status != Table::kNotFound) {
+                        return status;
+                    }
+                }
+            }
+        }
     }
-
-    // Search L0 files in reverse order (newest first)
-    // L0 files can overlap, so we must check all of them that might contain the key
-    for (auto it = _files[0].rbegin(); it != _files[0].rend(); ++it) {
-        if (key >= it->smallest && key <= it->largest) {
+    
+    for (int level = 1; level < 7; ++level) {
+        const auto& files = _files[level];
+        auto it = std::lower_bound(files.begin(), files.end(), key,
+            [](const FileMetaData& f, const std::string& k) {
+                return f.largest < k;
+            });
+        if (it != files.end() && key >= it->smallest && key <= it->largest) {
             std::shared_ptr<Table> table = GetTable(it->number);
             if (table) {
-                return table->Get(key, value);
+                Table::Status status = table->Get(key, value);
+                if (status != Table::kNotFound) {
+                    return status;
+                }
             }
         }
     }
