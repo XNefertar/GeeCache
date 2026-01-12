@@ -223,6 +223,7 @@ void DB::Recover(const std::string& wal_path) {
 }
 
 void DB::MaybeScheduleCompaction() {
+    _compaction_scheduled.store(true, std::memory_order_release);
     _compaction_cv.notify_all();
 }
 
@@ -234,9 +235,11 @@ void DB::BackgroundCompaction() {
         {
             std::unique_lock<std::mutex> cv_lock(_compaction_mutex);
             _compaction_cv.wait(cv_lock, [this]{ 
-                return _stop_compaction || (_versions && _versions->current()); // Simple check
+                return _stop_compaction || _compaction_scheduled.load(std::memory_order_acquire); // Simple check
             });
             if (_stop_compaction) break;
+
+            _compaction_scheduled.store(false, std::memory_order_release);
         }
         
         // Try pick compaction
@@ -262,8 +265,6 @@ void DB::BackgroundCompaction() {
         }
         
         if (!c || iterators.empty()) {
-            // Nothing to do, wait again (or sleep briefly if we woke up spuriously)
-             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
         
