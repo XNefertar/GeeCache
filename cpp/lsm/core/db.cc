@@ -233,7 +233,7 @@ void DB::MaybeScheduleCompaction() {
 void DB::BackgroundCompaction() {
     while (!_stop_compaction) {
         std::unique_ptr<VersionSet::Compaction> c;
-        std::vector<Iterator*> iterators;
+        std::vector<std::unique_ptr<Iterator>> iterators;
         
         {
             std::unique_lock<std::mutex> cv_lock(_compaction_mutex);
@@ -265,7 +265,7 @@ void DB::BackgroundCompaction() {
                                 error = true;
                                 return;
                             }
-                            iterators.push_back(t->NewIterator());
+                            iterators.push_back(std::unique_ptr<Iterator>(t->NewIterator()));
                         }
                     };
 
@@ -275,9 +275,6 @@ void DB::BackgroundCompaction() {
                     }
                     
                     if (error) {
-                        for (auto* it : iterators) {
-                            delete it;
-                        }
                         iterators.clear();
                         c.reset();
                     }
@@ -290,7 +287,7 @@ void DB::BackgroundCompaction() {
         }
         
         // Merge
-        MergingIterator* merge_iter = new MergingIterator(iterators);
+        MergingIterator* merge_iter = new MergingIterator(std::move(iterators));
         merge_iter->SeekToFirst();
         
         int file_num = _versions->NewFileNumber();

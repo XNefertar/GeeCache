@@ -2,14 +2,12 @@
 
 namespace lsm {
 
-MergingIterator::MergingIterator(const std::vector<Iterator*>& children) 
-    : _children(children), _current(nullptr) {
+MergingIterator::MergingIterator(std::vector<std::unique_ptr<Iterator>> children) 
+    : _children(std::move(children)), _current(nullptr) {
 }
 
 MergingIterator::~MergingIterator() {
-    for (auto child : _children) {
-        delete child;
-    }
+    // Unique pointers clean themselves up
 }
 
 bool MergingIterator::Valid() const {
@@ -22,7 +20,7 @@ void MergingIterator::SeekToFirst() {
     for (size_t i = 0; i < _children.size(); ++i) {
         _children[i]->SeekToFirst();
         if (_children[i]->Valid()) {
-            _heap.push({_children[i], (int)i});
+            _heap.push({_children[i].get(), (int)i});
         }
     }
     
@@ -39,7 +37,7 @@ void MergingIterator::Seek(const std::string& target) {
     for (size_t i = 0; i < _children.size(); ++i) {
         _children[i]->Seek(target);
         if (_children[i]->Valid()) {
-            _heap.push({_children[i], (int)i});
+            _heap.push({_children[i].get(), (int)i});
         }
     }
     

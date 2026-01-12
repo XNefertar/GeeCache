@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 #include <queue>
+#include <memory>
+#include <functional>
 #include "core/iterator.h"
 
 namespace lsm {
@@ -8,7 +10,7 @@ namespace lsm {
 class MergingIterator : public Iterator {
 public:
     // Takes ownership of children
-    MergingIterator(const std::vector<Iterator*>& children);
+    MergingIterator(std::vector<std::unique_ptr<Iterator>> children);
     virtual ~MergingIterator();
 
     bool Valid() const override;
@@ -20,7 +22,7 @@ public:
     bool IsDeleted() const override;
 
 private:
-    std::vector<Iterator*> _children;
+    std::vector<std::unique_ptr<Iterator>> _children;
     
     struct Node {
         Iterator* iter;
