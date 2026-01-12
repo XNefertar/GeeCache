@@ -235,7 +235,7 @@ void DB::BackgroundCompaction() {
         {
             std::unique_lock<std::mutex> cv_lock(_compaction_mutex);
             _compaction_cv.wait(cv_lock, [this]{ 
-                return _stop_compaction || _compaction_scheduled.load(std::memory_order_acquire); // Simple check
+                return _stop_compaction || _compaction_scheduled.load(std::memory_order_acquire);
             });
             if (_stop_compaction) break;
 
