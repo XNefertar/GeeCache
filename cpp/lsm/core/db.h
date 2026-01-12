@@ -34,11 +34,11 @@ private:
     std::mutex _mutex;
     
     std::thread _sync_thread;
-    std::atomic<bool> _stop_sync;
+    std::atomic<bool> _stop_sync{false};
     void BackgroundSync();
     
     std::thread _compaction_thread;
-    std::atomic<bool> _stop_compaction;
+    std::atomic<bool> _stop_compaction{false};
     std::condition_variable _compaction_cv;
     std::mutex _compaction_mutex;
     bool _compaction_scheduled{false};
