@@ -25,7 +25,7 @@ DB::DB(const std::string& path, const Options& options)
     
     Recover(wal_path);
     
-    _wal = std::make_unique<WAL>(wal_path);
+    _wal = std::make_shared<WAL>(wal_path);
     
     if (!_options.sync) {
         _sync_thread = std::thread(&DB::BackgroundSync, this);
@@ -145,7 +145,7 @@ void DB::Flush() {
     std::string wal_path = _path + "/wal.log";
     fs::remove(wal_path);
     // Create new WAL
-    _wal = std::make_unique<WAL>(wal_path);
+    _wal = std::make_shared<WAL>(wal_path);
     
     std::cout << "[C++] Flushed MemTable to " << fname << std::endl;
     
@@ -156,8 +156,15 @@ void DB::BackgroundSync() {
     while (!_stop_sync) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         if (_stop_sync) break;
-        if (_wal) {
-            _wal->Sync();
+
+        std::shared_ptr<WAL> current_wal;
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            current_wal = _wal;
+        }
+
+        if (current_wal) {
+            current_wal->Sync();
         }
     }
 }

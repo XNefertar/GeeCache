@@ -29,7 +29,7 @@ private:
     std::string _path;
     Options _options;
     std::unique_ptr<MemTable> _memtable;
-    std::unique_ptr<WAL> _wal;
+    std::shared_ptr<WAL> _wal;
     std::unique_ptr<VersionSet> _versions;
     std::mutex _mutex;
     
