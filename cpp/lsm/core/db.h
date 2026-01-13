@@ -49,6 +49,8 @@ private:
     void Recover(const std::string& wal_path);
     void Flush();
     
+    std::atomic<uint64_t> _last_seq{0};
+
     const size_t kMemTableSizeLimit = 4 * 1024 * 1024; // 4MB
 };
 

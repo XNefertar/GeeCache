@@ -3,9 +3,11 @@
 #include <filesystem>
 #include <chrono>
 #include <fstream>
+#include <climits>
 #include "core/sstable/table_builder.h"
 #include "core/sstable/table.h"
 #include "util/merging_iterator.h"
+#include "core/coding.h"
 
 namespace lsm {
 
@@ -62,20 +64,39 @@ void DB::Put(const std::string& key, const std::string& value) {
         Flush();
     }
 
-    _wal->Append(key, value, false);
+    uint64_t seq = ++_last_seq;
+    std::string internal_key = CodingUtil::AppendSeq(key, seq);
+
+    _wal->Append(internal_key, value, false);
     if (_options.sync) {
         _wal->Sync();
     }
-    _memtable->Put(key, value);
+    _memtable->Put(internal_key, value);
 }
 
 bool DB::Get(const std::string& key, std::string* value) {
     std::lock_guard<std::mutex> lock(_mutex);
-    if (_memtable->Get(key, value)) {
-        return true;
+    
+    std::string lookup_key = CodingUtil::AppendSeq(key, UINT64_MAX);
+
+    // Check MemTable
+    {
+        std::unique_ptr<SkipList::Iterator> iter(_memtable->NewIterator());
+        iter->Seek(lookup_key);
+        if (iter->Valid()) {
+            std::string internal_key = iter->Key();
+            if (CodingUtil::ExtractUserKey(internal_key) == key) {
+                 if (iter->IsDeleted()) {
+                     return false;
+                 }
+                 *value = iter->Value();
+                 return true;
+            }
+        }
     }
+
     // Check SSTables via Version
-    Table::Status result = _versions->current()->Get(key, value);
+    Table::Status result = _versions->current()->Get(lookup_key, value);
     if (result == Table::kFound) {
         return true;
     } else if (result == Table::kDeleted) {
@@ -92,11 +113,14 @@ void DB::Delete(const std::string& key) {
         Flush();
     }
 
-    _wal->Append(key, "", true);
+    uint64_t seq = ++_last_seq;
+    std::string internal_key = CodingUtil::AppendSeq(key, seq);
+
+    _wal->Append(internal_key, "", true);
     if (_options.sync) {
         _wal->Sync();
     }
-    _memtable->Delete(key);
+    _memtable->Delete(internal_key);
 }
 
 void DB::Flush() {
@@ -192,6 +216,10 @@ void DB::Recover(const std::string& wal_path) {
         std::string key(klen, '\0');
         file.read(&key[0], klen);
         if (file.gcount() != klen) break;
+        
+        // Recover Max Seq
+        uint64_t seq = CodingUtil::ExtractSeq(key);
+        if (seq > _last_seq) _last_seq = seq;
         
         // Read value (if not delete)
         std::string value;
@@ -308,21 +336,45 @@ void DB::BackgroundCompaction() {
         std::string smallest, largest;
         bool first = true;
         
+        std::string current_user_key;
+        bool has_current_user_key = false;
+        
         while (merge_iter->Valid()) {
-            std::string key = merge_iter->Key();
+            std::string internal_key = merge_iter->Key();
+            std::string user_key = CodingUtil::ExtractUserKey(internal_key);
             std::string value = merge_iter->Value();
             bool is_deleted = merge_iter->IsDeleted();
             
-            // Skip duplicates (implied: first one is from lower level = newer)
-            merge_iter->Next();
-            while (merge_iter->Valid() && merge_iter->Key() == key) {
-                merge_iter->Next();
+            // Note: Keys are sorted by UserKey ASC, Seq DESC.
+            // The first time we see a User Key, it is the newest version.
+            bool is_new_key = (!has_current_user_key || user_key != current_user_key);
+            
+            if (is_new_key) {
+                current_user_key = user_key;
+                has_current_user_key = true;
+                
+                // Drop tombstone if it is safe (bottom level)
+                bool drop = false;
+                if (is_deleted) {
+                    // Check if we are compacting to the last level (Level 6)
+                    // We assume kNumLevels = 7 (0..6)
+                    if (c->level + 1 >= 6) {
+                        drop = true;
+                    }
+                }
+                
+                if (!drop) {
+                    if (first) { smallest = internal_key; first = false; }
+                    largest = internal_key;
+                    builder.Add(internal_key, value, is_deleted);
+                }
+            } else {
+                // This is an older version of the same User Key (lower sequence number).
+                // It is shadowed by the newer version we just processed.
+                // Drop it.
             }
             
-            if (first) { smallest = key; first = false; }
-            largest = key;
-            
-            builder.Add(key, value, is_deleted);
+            merge_iter->Next();
         }
         delete merge_iter;
         builder.Finish();
