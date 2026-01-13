@@ -1,4 +1,5 @@
 #include "util/merging_iterator.h"
+#include <cassert>
 
 namespace lsm {
 
@@ -68,14 +69,17 @@ void MergingIterator::Next() {
 }
 
 std::string MergingIterator::Key() const {
+    assert(_current != nullptr);
     return _current->Key();
 }
 
 std::string MergingIterator::Value() const {
+    assert(_current != nullptr);
     return _current->Value();
 }
 
 bool MergingIterator::IsDeleted() const {
+    assert(_current != nullptr);
     return _current->IsDeleted();
 }
 
