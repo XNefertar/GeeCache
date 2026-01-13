@@ -266,7 +266,10 @@ void DB::BackgroundCompaction() {
                     
                     bool error = false;
                     auto add_iterators = [&](const std::vector<FileMetaData>& files) {
-                        for (const auto& f : files) {
+                        // Iterate in reverse order (newest to oldest) so that newer files
+                        // get lower indices in MergingIterator (higher priority).
+                        for (auto it = files.rbegin(); it != files.rend(); ++it) {
+                            const auto& f = *it;
                             auto t = _versions->current()->GetTable(f.number);
                             if (!t) {
                                 std::cerr << "[Compaction Error] Failed to open table " << f.number 
