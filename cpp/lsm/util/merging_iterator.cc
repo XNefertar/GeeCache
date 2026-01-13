@@ -52,20 +52,35 @@ void MergingIterator::Seek(const std::string& target) {
 void MergingIterator::Next() {
     if (_heap.empty()) return;
     
-    Node top = _heap.top();
-    _heap.pop();
+    // Remember the key we are currently ensuring we skip past
+    std::string current_key = _current->Key();
     
-    // Advance the current iterator
-    top.iter->Next();
-    if (top.iter->Valid()) {
-        _heap.push(top);
-    }
-    
-    if (!_heap.empty()) {
-        _current = _heap.top().iter;
-    } else {
-        _current = nullptr;
-    }
+    do {
+        Node top = _heap.top();
+        _heap.pop();
+        
+        // Advance the iterator
+        top.iter->Next();
+        if (top.iter->Valid()) {
+            _heap.push(top);
+        }
+        
+        // Update _current to point to the new top (or null)
+        if (!_heap.empty()) {
+            _current = _heap.top().iter;
+        } else {
+            _current = nullptr;
+            return;
+        }
+        
+        // If the new top has the same key (strictly equal, including sequence number if internal keys),
+        // we must advance it too.
+        // For standard merging iterator behavior, we treat strict equality as a duplicate to skip.
+        // Note: In our InternalKey scheme (Key|~Seq), strictly equal keys means
+        // same UserKey AND same Seq. This happens if we have overlapping L0 files
+        // containing the exact same record (e.g. from forced flushes or simple duplication).
+        
+    } while (_current && _current->Key() == current_key);
 }
 
 std::string MergingIterator::Key() const {
