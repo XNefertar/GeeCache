@@ -234,6 +234,7 @@ void DB::BackgroundCompaction() {
     while (!_stop_compaction) {
         std::unique_ptr<VersionSet::Compaction> c;
         std::vector<std::unique_ptr<Iterator>> iterators;
+        int file_num = 0;
         
         {
             std::unique_lock<std::mutex> cv_lock(_compaction_mutex);
@@ -252,6 +253,7 @@ void DB::BackgroundCompaction() {
             if (_versions->current()->_compaction_score >= 1.0) {
                 c = _versions->PickCompaction();
                 if (c) {
+                    file_num = _versions->NewFileNumber();
                     std::cout << "[Compaction] Picked Level " << c->level << " (" << c->inputs[0].size() 
                                << " files) to merge with " << c->inputs[1].size() << " files in next level." << std::endl;
                     
@@ -290,7 +292,6 @@ void DB::BackgroundCompaction() {
         MergingIterator* merge_iter = new MergingIterator(std::move(iterators));
         merge_iter->SeekToFirst();
         
-        int file_num = _versions->NewFileNumber();
         std::string fname = _path + "/" + std::to_string(file_num) + ".sst";
         TableBuilder builder(fname);
         
