@@ -8,6 +8,8 @@
 #include "wal.h"
 #include "core/version/version.h"
 
+#include <condition_variable>
+
 namespace lsm {
 
 struct Options {
@@ -27,17 +29,28 @@ private:
     std::string _path;
     Options _options;
     std::unique_ptr<MemTable> _memtable;
-    std::unique_ptr<WAL> _wal;
+    std::shared_ptr<WAL> _wal;
     std::unique_ptr<VersionSet> _versions;
     std::mutex _mutex;
     
     std::thread _sync_thread;
-    std::atomic<bool> _stop_sync;
+    std::atomic<bool> _stop_sync{false};
     void BackgroundSync();
+    
+    std::thread _compaction_thread;
+    std::atomic<bool> _stop_compaction{false};
+    std::condition_variable _compaction_cv;
+    std::mutex _compaction_mutex;
+    bool _compaction_scheduled{false};
+
+    void BackgroundCompaction();
+    void MaybeScheduleCompaction();
     
     void Recover(const std::string& wal_path);
     void Flush();
     
+    std::atomic<uint64_t> _last_seq{0};
+
     const size_t kMemTableSizeLimit = 4 * 1024 * 1024; // 4MB
 };
 

@@ -4,12 +4,11 @@
 #include <fstream>
 #include <memory>
 #include "util/bloom_filter.h"
+#include "core/iterator.h"
 
 namespace lsm {
 
-class Table {
-    
-
+class Table : public std::enable_shared_from_this<Table> {
 public:
 
     enum Status {
@@ -27,24 +26,25 @@ public:
     // Result: 0 = Not Found, 1 = Found, 2 = Deleted
     Status Get(const std::string& key, std::string* value);
 
-    class Iterator {
+    class Iterator : public lsm::Iterator {
     public:
-        Iterator(Table* table);
-        bool Valid() const;
-        void SeekToFirst();
-        void Seek(const std::string& target);
-        void Next();
-        std::string Key() const;
-        std::string Value() const;
-        bool IsDeleted() const; // Need to read type
+        Iterator(std::shared_ptr<Table> table);
+        // Implement lsm::Iterator
+        bool Valid() const override;
+        void SeekToFirst() override;
+        void Seek(const std::string& target) override;
+        void Next() override;
+        std::string Key() const override;
+        std::string Value() const override;
+        bool IsDeleted() const override;
     private:
-        Table* _table;
+        std::shared_ptr<Table> _table;
         uint64_t _current_offset;
         // Cache current fields
         std::string _key;
         std::string _value;
-        bool _is_deleted;
-        bool _valid;
+        bool _is_deleted{false};
+        bool _valid{false};
         
         void ParseCurrent();
     };
