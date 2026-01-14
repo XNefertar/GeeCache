@@ -73,12 +73,32 @@ void TestDynamicRate() {
     std::cout << "PASSED" << std::endl;
 }
 
+void TestRequest() {
+    std::cout << "[Test] Request Blocking... ";
+    // 100 bytes/sec
+    TokenBucket bucket(10.0, 100.0);
+    bucket.Consume(10, 0); // Empty
+
+    // Request 50 bytes. Rate 100/s -> need 0.5 sec wait.
+    auto start = std::chrono::steady_clock::now();
+    bucket.Request(50);
+    auto end = std::chrono::steady_clock::now();
+
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    
+    // Check if wait is around 500ms
+    assert(duration_ms >= 450);
+    
+    std::cout << "PASSED (Waited " << duration_ms << "ms for 50 bytes @ 100B/s)" << std::endl;
+}
+
 int main() {
     std::cout << "=== Running TokenBucket Tests ===" << std::endl;
     TestBasicConsumption();
     TestRefill();
     TestBlocking();
     TestDynamicRate();
+    TestRequest();
     std::cout << "=== All TokenBucket Tests Passed ===" << std::endl;
     return 0;
 }
