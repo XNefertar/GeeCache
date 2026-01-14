@@ -37,3 +37,11 @@ target_link_libraries(lsm_test PRIVATE lsm Threads::Threads)
 add_executable(lsm_bench test/lsm_bench.cc)
 target_link_libraries(lsm_bench PRIVATE lsm Threads::Threads)
 
+# TokenBucket Test
+add_executable(token_bucket_test test/token_bucket_test.cc)
+target_link_libraries(token_bucket_test PRIVATE lsm Threads::Threads)
+
+# DB Rate Limit Test
+add_executable(db_ratelimit_test test/db_ratelimit_test.cc)
+target_link_libraries(db_ratelimit_test PRIVATE lsm Threads::Threads)
+

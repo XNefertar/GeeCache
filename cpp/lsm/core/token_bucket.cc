@@ -47,7 +47,7 @@ namespace lsm {
             }
 
             auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start_time).count();
-           if (elapsed_ms >= max_wait_ms) {
+            if (elapsed_ms >= max_wait_ms) {
                 // 超时处理策略：
                 // 1. 硬拒绝：return false;
                 // 2. 软限流：如果还有剩余token，扣成负数也允许通过（允许透支），只要别太离谱。
