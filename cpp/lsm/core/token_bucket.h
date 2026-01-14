@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <mutex>
+#include <condition_variable>
 #include <algorithm>
 
 namespace lsm {
@@ -27,9 +28,12 @@ namespace lsm {
         double GetRefillRate() const;
 
     private:
+        // Helper to replenish tokens based on elapsed time.
+        // REQUIRES: _mu is strictly locked by the caller.
         void Refill();
 
         mutable std::mutex _mu;
+        std::condition_variable _cv;
         double _tokens;           // 当前可用令牌数
         double _capacity;         // 桶上限
         double _refill_rate;      // 每秒补充的令牌数

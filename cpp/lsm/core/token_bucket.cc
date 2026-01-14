@@ -8,6 +8,7 @@ namespace lsm {
         , _refill_rate(std::max(refill_rate, 1.0))  // Enforce minimum rate to avoid division by zero
         , _last_refill_time(Clock::now()) {}
 
+    // REQUIRES: _mu is locked
     void TokenBucket::Refill() {
         auto now = Clock::now();
         double seconds = std::chrono::duration<double>(now - _last_refill_time).count();
@@ -22,7 +23,10 @@ namespace lsm {
     void TokenBucket::SetRefillRate(double new_rate) {
         std::lock_guard<std::mutex> lock(_mu);
         Refill();
-        _refill_rate = new_rate;
+        _refill_rate = std::max(new_rate, 0.0);
+        // Rate increased? Waiters might be able to proceed earlier.
+        // Rate decreased? Waiters might need to wait longer (handled by re-check).
+        _cv.notify_all();
     }
 
     double TokenBucket::GetRefillRate() const {
@@ -60,33 +64,51 @@ namespace lsm {
     }
 
     bool TokenBucket::Consume(size_t bytes, int max_wait_ms) {
-        if (bytes == 0) return true;
+        if (bytes == 0) {
+            std::lock_guard<std::mutex> lock(_mu);
+            Refill();
+            return true;
+        }
 
         auto start_time = Clock::now();
+        auto deadline = start_time + std::chrono::milliseconds(max_wait_ms);
 
+        std::unique_lock<std::mutex> lock(_mu);
+        
         while (true) {
-            {
-                std::lock_guard<std::mutex> lock(_mu);
-                Refill();
+            Refill();
 
-                if (_tokens >= bytes) {
-                    _tokens -= bytes;
-                    return true;
+            if (_tokens >= bytes) {
+                _tokens -= bytes;
+                return true;
+            }
+
+            // Check absolute timeout
+            auto now = Clock::now();
+            if (now >= deadline) {
+                return false;
+            }
+
+            // Calculate exact time needed to refill enough tokens
+            double needed = bytes - _tokens;
+            if (_refill_rate <= 0) {
+                // Eternal wait -> wait until deadline
+                if (_cv.wait_until(lock, deadline) == std::cv_status::timeout) {
+                    return false;
                 }
-            }
+            } else {
+                double needed_sec = needed / _refill_rate;
+                auto wait_duration = std::chrono::duration_cast<Clock::duration>(
+                    std::chrono::duration<double>(needed_sec));
+                
+                auto wake_time = now + wait_duration;
+                if (wake_time > deadline) {
+                    wake_time = deadline;
+                }
 
-            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start_time).count();
-            if (elapsed_ms >= max_wait_ms) {
-                // 超时处理策略：
-                // 1. 硬拒绝：return false;
-                // 2. 软限流：如果还有剩余token，扣成负数也允许通过（允许透支），只要别太离谱。
-                // 这里我们选择返回 true 但处于欠费状态（Bursty），或者严格返回 false。
-                // 简单起见，返回 true 允许通过，但通过日志告警可能是更好的软限流方式。
-                // 现在的实现：严格返回 false 代表被限流。
-                return false; 
+                // efficient wait: wakes up on timeout (tokens ready) or signal (rate change)
+                _cv.wait_until(lock, wake_time);
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 }
