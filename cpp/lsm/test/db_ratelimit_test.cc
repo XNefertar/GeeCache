@@ -19,6 +19,14 @@ void CleanDB(const std::string& path) {
     }
 }
 
+struct AutoCleaner {
+    std::string path;
+    AutoCleaner(const std::string& p) : path(p) {}
+    ~AutoCleaner() {
+        CleanDB(path);
+    }
+};
+
 // Result struct to hold test metrics
 struct TestResult {
     long write_duration_ms;
@@ -30,6 +38,8 @@ TestResult RunMixedLoadTest(bool enable_limit, double limit_rate, int write_mb, 
     std::string test_name = enable_limit ? "Limited" : "Unlimited";
     std::string db_path = "/tmp/lsm_test_mixed_" + std::string(enable_limit ? "on" : "off");
     CleanDB(db_path);
+
+    AutoCleaner cleaner(db_path);
 
     Options opts;
 
@@ -161,6 +171,9 @@ int main() {
     } else {
         std::cout << "WARN: Rate limiting did not significantly improve latency in this environment." << std::endl;
     }
+
+    CleanDB("/tmp/lsm_test_mixed_on");
+    CleanDB("/tmp/lsm_test_mixed_off");
 
     return 0;
 }
