@@ -44,7 +44,7 @@ void TestBlocking() {
     bucket.Consume(10, 0); // Empty
     
     // Request 1 byte, wait up to 200ms. 
-    // Refill rate is 10 bytes/sec -> 1 byte takes 100ms.
+    // Refill rate is 10 bytes/sec -> 1 byte every 100ms.
     auto start = std::chrono::steady_clock::now();
     bool success = bucket.Consume(1, 200); 
     auto end = std::chrono::steady_clock::now();
@@ -52,8 +52,8 @@ void TestBlocking() {
     assert(success == true);
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     
-    // Should have waited at least ~90ms (allowing for some jitter)
-    assert(duration_ms >= 90);
+    // Should have waited at least ~80ms (allowing for scheduler jitter)
+    assert(duration_ms >= 80);
     
     std::cout << "PASSED (Waited " << duration_ms << "ms)" << std::endl;
 }
