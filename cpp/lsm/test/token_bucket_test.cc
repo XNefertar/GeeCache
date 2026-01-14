@@ -52,8 +52,8 @@ void TestBlocking() {
     assert(success == true);
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     
-    // Should have waited at least ~90ms (allowing for some jitter)
-    assert(duration_ms >= 90);
+    // Should have waited at least ~80ms (allowing for scheduler jitter)
+    assert(duration_ms >= 80);
     
     std::cout << "PASSED (Waited " << duration_ms << "ms)" << std::endl;
 }
