@@ -9,6 +9,9 @@
 #include <atomic>
 #include <future>
 #include <numeric>
+#include <mutex>
+#include <algorithm>
+#include <sstream>
 
 namespace fs = std::filesystem;
 using namespace lsm;
