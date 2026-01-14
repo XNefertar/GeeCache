@@ -17,6 +17,10 @@ namespace lsm {
         // 返回 true 表示成功拿到令牌（或部分拿到但允许通过），false 表示超时/限流拒绝。
         bool Consume(size_t bytes, int max_wait_ms = 100);
 
+        // 阻塞等待直到获取到足够的令牌
+        // 推荐在高并发写入场景使用，避免忙等和上下文切换
+        void Request(size_t bytes);
+
         // 动态调整填充速率（线程安全）
         void SetRefillRate(double new_rate);
 

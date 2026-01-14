@@ -30,6 +30,31 @@ namespace lsm {
         return _refill_rate;
     }
 
+    void TokenBucket::Request(size_t bytes) {
+        std::unique_lock<std::mutex> lock(_mu);
+        Refill();
+
+        if (_tokens >= bytes) {
+            _tokens -= bytes;
+            return;
+        }
+
+        // 计算需要等待的时间
+        double needed = bytes - _tokens;
+        double wait_seconds = needed / _refill_rate;
+        
+        // 预支令牌 (允许 tokens 变为负数)
+        _tokens -= bytes;
+        
+        lock.unlock(); // 释放锁，允许其他线程进入（虽然它们可能也需要由于负 tokens 而等待更久）
+
+        if (wait_seconds > 0) {
+            // 精准睡眠
+            auto wait_micros = static_cast<int64_t>(wait_seconds * 1000000);
+            std::this_thread::sleep_for(std::chrono::microseconds(wait_micros));
+        }
+    }
+
     bool TokenBucket::Consume(size_t bytes, int max_wait_ms) {
         if (bytes == 0) return true;
 

@@ -31,10 +31,11 @@ DB::DB(const std::string& path, const Options& options)
 
     if (_options.write_rate_limit > 0) {
         // Capacity should be at least allow small chunks.
-        double capacity = std::max((double)_options.write_rate_limit, 4096.0);
+        double burst_duration_seconds = 1.0;
+        double capacity = static_cast<double>(_options.write_rate_limit) * burst_duration_seconds;
         _rate_limiter = std::make_unique<TokenBucket>(capacity, _options.write_rate_limit);
-        std::cout << "[C++] Write rate limit enabled: " << _options.write_rate_limit 
-                  << " B/s, Capacity: " << capacity << " B" << std::endl;
+        // std::cout << "[C++] Write rate limit enabled: " << _options.write_rate_limit 
+        //           << " B/s, Capacity: " << capacity << " B" << std::endl;
     }
     
     if (!_options.sync) {
@@ -67,15 +68,9 @@ DB::~DB() {
 
 void DB::Put(const std::string& key, const std::string& value) {
     if (_rate_limiter) {
-        size_t remaining = key.size() + value.size();
-        const size_t kChunkSize = 4096; // 4KB chunks
-        while (remaining > 0) {
-            size_t chunk = std::min(remaining, kChunkSize);
-            while (!_rate_limiter->Consume(chunk, 1000)) {
-                // Keep waiting until tokens are available
-            }
-            remaining -= chunk;
-        }
+        // 使用 Request 替代原来的忙等/轮询逻辑
+        // Request 内部计算需要等待的时间并进行精准睡眠，避免 CPU 浪费和延迟抖动
+        _rate_limiter->Request(key.size() + value.size());
     }
 
     std::lock_guard<std::mutex> lock(_mutex);
