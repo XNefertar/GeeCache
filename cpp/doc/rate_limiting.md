@@ -50,7 +50,7 @@ Enabled via `Options` passed to `DB::DB()`:
 ```cpp
 struct Options {
     // ...
-    float write_rate_limit = 0.0; // 0.0 = Unlimited (无限制)
+    double write_rate_limit = 0.0; // 0.0 = Unlimited (无限制)
 };
 ```
 If `write_rate_limit > 0`, a `TokenBucket` is initialized with:

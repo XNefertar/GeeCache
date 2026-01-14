@@ -15,7 +15,7 @@ namespace lsm {
 
 struct Options {
     bool sync = false; // true: fsync on every write, false: rely on background sync
-    float write_rate_limit = 0.0; // bytes/sec, 0.0 means no limit
+    double write_rate_limit = 0.0; // bytes/sec, 0.0 means no limit
 };
 
 class DB {
