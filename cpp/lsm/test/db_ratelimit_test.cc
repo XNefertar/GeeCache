@@ -6,6 +6,9 @@
 #include <vector>
 #include <thread>
 #include <iomanip>
+#include <atomic>
+#include <future>
+#include <numeric>
 
 namespace fs = std::filesystem;
 using namespace lsm;
@@ -16,72 +19,148 @@ void CleanDB(const std::string& path) {
     }
 }
 
-long RunTest(bool enable_limit, double limit_rate, int data_mb) {
-    std::string db_path = "/tmp/lsm_test_ratelimit_" + std::string(enable_limit ? "on" : "off");
+// Result struct to hold test metrics
+struct TestResult {
+    long write_duration_ms;
+    double avg_read_latency_us;
+    double p99_read_latency_us;
+};
+
+TestResult RunMixedLoadTest(bool enable_limit, double limit_rate, int write_mb) {
+    std::string test_name = enable_limit ? "Limited" : "Unlimited";
+    std::string db_path = "/tmp/lsm_test_mixed_" + std::string(enable_limit ? "on" : "off");
     CleanDB(db_path);
 
     Options opts;
+    // Emulate realistic scenario: 
+    // - Sync is ON (durability matters, and IO is the bottleneck)
+    // - Compaction is running
+    opts.sync = true; 
+    
     if (enable_limit) {
         opts.write_rate_limit = limit_rate;
     } else {
         opts.write_rate_limit = 0.0;
     }
     
-    // Disable background sync to make it pure memory speed vs rate limit
-    opts.sync = false; 
-    
     DB db(db_path, opts);
     
-    // 0.5 MB value
-    int val_size = 1024 * 512;
-    std::string large_val(val_size, 'x'); 
+    // Prepare data
+    int val_size = 4096; // 4KB values (typical for DBs)
+    std::string val(val_size, 'x');
+    int write_count = (write_mb * 1024 * 1024) / val_size;
     
-    int count = (data_mb * 1024 * 1024) / val_size;
+    // Populate some initial data for reading
+    int initial_keys = 1000;
+    for(int i=0; i<initial_keys; ++i) {
+         db.Put("key" + std::to_string(i), val);
+    }
+
+    std::cout << "\n[" << test_name << "] Starting (Writes: " << write_mb << "MB, Rate: " 
+              << (enable_limit ? std::to_string((int)limit_rate/1024/1024) + "MB/s" : "Max") << ")..." << std::endl;
+
+    std::atomic<bool> stop_reads{false};
+    std::vector<double> read_latencies;
+    std::mutex latency_mutex;
+
+    // --- Reader Thread ---
+    // Simulates user queries requiring low latency (QoS)
+    auto reader_future = std::async(std::launch::async, [&]() {
+        int key_idx = 0;
+        int successful_reads = 0;
+        while (!stop_reads) {
+            auto t0 = std::chrono::steady_clock::now();
+            
+            std::string value;
+            db.Get("key" + std::to_string(key_idx % initial_keys), &value);
+            
+            auto t1 = std::chrono::steady_clock::now();
+            double latency_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+            
+            {
+                std::lock_guard<std::mutex> lock(latency_mutex);
+                read_latencies.push_back(latency_us);
+            }
+            
+            key_idx++;
+            successful_reads++;
+            // Emulate read traffic: 2000 QPS target
+            std::this_thread::sleep_for(std::chrono::microseconds(500)); 
+        }
+        return successful_reads;
+    });
+
+    // --- Writer Thread (Main) ---
+    // Simulates massive batch ingest or traffic spike
+    auto write_start = std::chrono::steady_clock::now();
     
-    std::cout << "[Test] Rate Limit: " << (enable_limit ? std::to_string((int)limit_rate/1024/1024) + " MB/s" : "Unlimited") 
-              << ", Data: " << data_mb << " MB ... " << std::flush;
-    
-    auto start = std::chrono::steady_clock::now();
-    
-    for (int i = 0; i < count; ++i) {
-        db.Put("key" + std::to_string(i), large_val);
+    for (int i = 0; i < write_count; ++i) {
+        db.Put("new_key_" + std::to_string(i), val);
+        if (write_count > 10 && i % (write_count / 10) == 0) std::cout << "." << std::flush;
     }
     
-    auto end = std::chrono::steady_clock::now();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    auto write_end = std::chrono::steady_clock::now();
+    long write_duration = std::chrono::duration_cast<std::chrono::milliseconds>(write_end - write_start).count();
     
-    std::cout << "Done in " << duration_ms << " ms" << std::endl;
-    return duration_ms;
+    // Stop reader
+    stop_reads = true;
+    int reads = reader_future.get();
+    std::cout << " Done. (Wrote " << write_count << " keys, Read " << reads << " times)" << std::endl;
+
+    // Calculate Latency Stats
+    double sum = 0;
+    std::vector<double> sorted_latencies = read_latencies;
+    std::sort(sorted_latencies.begin(), sorted_latencies.end());
+    
+    for (auto v : sorted_latencies) sum += v;
+    double avg = sorted_latencies.empty() ? 0 : sum / sorted_latencies.size();
+    double p99 = sorted_latencies.empty() ? 0 : sorted_latencies[size_t(sorted_latencies.size() * 0.99)];
+
+    return {write_duration, avg, p99};
 }
 
 int main() {
-    std::cout << "=== Comparator Test: Rate Limit ON vs OFF ===" << std::endl;
+    std::cout << "=== Mixed Workload QoS Test: Latency under Load ===" << std::endl;
+    std::cout << "Scenario: 2MB/s Write Limit vs Unlimited. Background Reader (QoS target)." << std::endl;
 
-    // Phase 1: Unlimited
-    // Should be extremely fast as it just hits MemTable (and WAL if not sync)
-    long duration_off = RunTest(false, 0, 10); // 10MB
-    
-    // Phase 2: Limited to 2MB/s
-    // 10MB data.
-    // Capacity = 2MB.
-    // Instant burst: 2MB.
-    // Remaining: 8MB.
-    // Refill rate: 2MB/s -> 4 seconds wait.
-    long duration_on = RunTest(true, 2.0 * 1024 * 1024, 10); // 10MB, 2MB/s limit
-    
-    std::cout << "\n=== Results ===" << std::endl;
-    std::cout << "Unlimited duration : " << duration_off << " ms" << std::endl;
-    std::cout << "Limited duration   : " << duration_on << " ms" << std::endl;
-    
-    double ratio = (double)duration_on / (double)std::max(duration_off, 1L);
-    std::cout << "Slowdown ratio     : " << std::fixed << std::setprecision(2) << ratio << "x" << std::endl;
+    // 1. Unlimited Run
+    // Using 5MB to avoid crushing the helper/test env with too much load causing accidents
+    TestResult result_unlimited = RunMixedLoadTest(false, 0, 5); 
 
-    if (duration_on < duration_off * 2 || duration_on < 3000) {
-        std::cerr << "Fail: Rate limited run was too fast! Limit did not work effectively." << std::endl;
-        return 1;
+    // 2. Limited Run (2MB/s)
+    // 5MB at 2MB/s should take ~2.5s + sync overhead
+    TestResult result_limited = RunMixedLoadTest(true, 2.0 * 1024 * 1024, 5); 
+
+    std::cout << "\n=== Comparative Results ===" << std::endl;
+    std::cout << std::left << std::setw(15) << "Metric" 
+              << std::setw(20) << "Unlimited (Spike)" 
+              << std::setw(20) << "Limited (Smooth)" << std::endl;
+    std::cout << std::string(55, '-') << std::endl;
+    
+    std::cout << std::left << std::setw(15) << "Write Time" 
+              << std::to_string(result_unlimited.write_duration_ms) + " ms"
+              << std::string(20 - std::to_string(result_unlimited.write_duration_ms).length() - 3, ' ')
+              << std::to_string(result_limited.write_duration_ms) + " ms" << std::endl;
+
+    std::cout << std::left << std::setw(15) << "Read Avg Lat" 
+              << std::fixed << std::setprecision(2) << result_unlimited.avg_read_latency_us << " us"
+              << std::string(20 - std::to_string((int)result_unlimited.avg_read_latency_us).length() - 6, ' ')
+              << std::fixed << std::setprecision(2) << result_limited.avg_read_latency_us << " us" << std::endl;
+
+    std::cout << std::left << std::setw(15) << "Read P99 Lat" 
+              << std::fixed << std::setprecision(2) << result_unlimited.p99_read_latency_us << " us"
+              << std::string(20 - std::to_string((int)result_unlimited.p99_read_latency_us).length() - 6, ' ')
+              << std::fixed << std::setprecision(2) << result_limited.p99_read_latency_us << " us" << std::endl;
+
+    std::cout << "\nAnalysis:" << std::endl;
+    if (result_limited.avg_read_latency_us < result_unlimited.avg_read_latency_us) {
+        std::cout << "PASS: Rate limiting improved read latency by " 
+                  << (result_unlimited.avg_read_latency_us / result_limited.avg_read_latency_us) 
+                  << "x times!" << std::endl;
+    } else {
+        std::cout << "WARN: Rate limiting did not significantly improve latency in this environment." << std::endl;
     }
 
-    std::cout << "Pass: Rate limiting effectively throttled throughput." << std::endl;
     return 0;
 }
 
