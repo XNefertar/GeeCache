@@ -1,4 +1,6 @@
 #include "table.h"
+#include "core/coding.h"
+#include <string_view>
 #include <iostream>
 #include <algorithm>
 #include <cstring>
@@ -88,8 +90,8 @@ bool Table::LoadIndex() {
 }
 
 Table::Status Table::Get(const std::string& key, std::string* value) {
-    // Check Bloom Filter first
-    if (!_filter_data.empty() && !_filter_policy.KeyMayMatch(key, _filter_data)) {
+    // Check Bloom Filter first (Check User Key)
+    if (!_filter_data.empty() && !_filter_policy.KeyMayMatch(CodingUtil::ExtractUserKey(key), _filter_data)) {
         return kNotFound; // Definitely not found
     }
 
@@ -116,22 +118,30 @@ Table::Status Table::Get(const std::string& key, std::string* value) {
         memcpy(&klen, data, sizeof(klen));
         data += sizeof(klen);
         
-        // Optimization: Compare key without allocation
-        if (klen == key.size() && memcmp(data, key.data(), klen) == 0) {
-            data += klen; // Skip key
-            
-            uint32_t vlen;
-            memcpy(&vlen, data, sizeof(vlen));
-            data += sizeof(vlen);
-            
-            *value = std::string(data, vlen);
-            data += vlen;
-            
-            uint8_t type;
-            memcpy(&type, data, sizeof(type));
-            
-            if (type == 1) return kDeleted; // Deleted
-            return kFound; // Found
+        std::string_view current_key(data, klen);
+        
+        // For Sequence Number support: Find first key >= target
+        if (current_key >= key) {
+             std::string curr_str(current_key);
+             if (CodingUtil::ExtractUserKey(curr_str) == CodingUtil::ExtractUserKey(key)) {
+                data += klen; // Skip key
+                
+                uint32_t vlen;
+                memcpy(&vlen, data, sizeof(vlen));
+                data += sizeof(vlen);
+                
+                *value = std::string(data, vlen);
+                data += vlen;
+                
+                uint8_t type;
+                memcpy(&type, data, sizeof(type));
+                data += 1; // type
+                
+                if (type == 1) return kDeleted;
+                return kFound;
+             } else {
+                 return kNotFound;
+             }
         }
         
         // Skip key
@@ -152,11 +162,11 @@ Table::Status Table::Get(const std::string& key, std::string* value) {
 
 
 Table::Iterator* Table::NewIterator() {
-    return new Iterator(this);
+    return new Iterator(shared_from_this());
 }
 
 // Iterator Implementation
-Table::Iterator::Iterator(Table* table) : _table(table), _current_offset(0), _valid(false) {}
+Table::Iterator::Iterator(std::shared_ptr<Table> table) : _table(std::move(table)), _current_offset(0), _valid(false) {}
 
 bool Table::Iterator::Valid() const {
     return _valid;

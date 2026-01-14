@@ -1,5 +1,6 @@
 #include "table_builder.h"
 #include <iostream>
+#include "core/coding.h"
 
 namespace lsm {
 
@@ -17,7 +18,8 @@ TableBuilder::~TableBuilder() {
 void TableBuilder::Add(const std::string& key, const std::string& value, bool is_deleted) {
     if (!_file.is_open()) return;
     
-    _keys.push_back(key);
+    // Add UserKey to BloomFilter keys
+    _keys.push_back(CodingUtil::ExtractUserKey(key));
     _last_key = key;
 
     uint32_t klen = key.size();
