@@ -28,6 +28,15 @@ DB::DB(const std::string& path, const Options& options)
     Recover(wal_path);
     
     _wal = std::make_shared<WAL>(wal_path);
+
+    if (_options.write_rate_limit > 0) {
+        // Capacity should be at least allow small chunks.
+        double burst_duration_seconds = 1.0;
+        double capacity = static_cast<double>(_options.write_rate_limit) * burst_duration_seconds;
+        _rate_limiter = std::make_unique<TokenBucket>(capacity, _options.write_rate_limit);
+        // std::cout << "[C++] Write rate limit enabled: " << _options.write_rate_limit 
+        //           << " B/s, Capacity: " << capacity << " B" << std::endl;
+    }
     
     if (!_options.sync) {
         _sync_thread = std::thread(&DB::BackgroundSync, this);
@@ -58,6 +67,12 @@ DB::~DB() {
 }
 
 void DB::Put(const std::string& key, const std::string& value) {
+    if (_rate_limiter) {
+        // 使用 Request 替代原来的忙等/轮询逻辑
+        // Request 内部计算需要等待的时间并进行精准睡眠，避免 CPU 浪费和延迟抖动
+        _rate_limiter->Request(key.size() + value.size());
+    }
+
     std::lock_guard<std::mutex> lock(_mutex);
     
     if (_memtable->MemoryUsage() >= kMemTableSizeLimit) {

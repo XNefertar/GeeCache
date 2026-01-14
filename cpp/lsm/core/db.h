@@ -7,6 +7,7 @@
 #include "memtable.h"
 #include "wal.h"
 #include "core/version/version.h"
+#include "core/token_bucket.h"
 
 #include <condition_variable>
 
@@ -14,6 +15,7 @@ namespace lsm {
 
 struct Options {
     bool sync = false; // true: fsync on every write, false: rely on background sync
+    double write_rate_limit = 0.0; // bytes/sec, 0.0 means no limit
 };
 
 class DB {
@@ -30,6 +32,7 @@ private:
     Options _options;
     std::unique_ptr<MemTable> _memtable;
     std::shared_ptr<WAL> _wal;
+    std::unique_ptr<TokenBucket> _rate_limiter;
     std::unique_ptr<VersionSet> _versions;
     std::mutex _mutex;
     
