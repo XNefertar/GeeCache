@@ -44,7 +44,7 @@ void TestBlocking() {
     bucket.Consume(10, 0); // Empty
     
     // Request 1 byte, wait up to 200ms. 
-    // Refill rate is 10 bytes/sec -> 1 byte takes 100ms.
+    // Refill rate is 10 bytes/sec -> 1 byte every 100ms.
     auto start = std::chrono::steady_clock::now();
     bool success = bucket.Consume(1, 200); 
     auto end = std::chrono::steady_clock::now();
