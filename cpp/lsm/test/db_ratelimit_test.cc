@@ -137,19 +137,20 @@ int main() {
     std::cout << std::string(55, '-') << std::endl;
     
     std::cout << std::left << std::setw(15) << "Write Time" 
-              << std::to_string(result_unlimited.write_duration_ms) + " ms"
-              << std::string(20 - std::to_string(result_unlimited.write_duration_ms).length() - 3, ' ')
+              << std::setw(20) << (std::to_string(result_unlimited.write_duration_ms) + " ms")
               << std::to_string(result_limited.write_duration_ms) + " ms" << std::endl;
 
+    std::ostringstream avg_unlim, avg_lim, p99_unlim, p99_lim;
+    avg_unlim << std::fixed << std::setprecision(2) << result_unlimited.avg_read_latency_us << " us";
+    avg_lim << std::fixed << std::setprecision(2) << result_limited.avg_read_latency_us << " us";
+    p99_unlim << std::fixed << std::setprecision(2) << result_unlimited.p99_read_latency_us << " us";
+    p99_lim << std::fixed << std::setprecision(2) << result_limited.p99_read_latency_us << " us";
+
     std::cout << std::left << std::setw(15) << "Read Avg Lat" 
-              << std::fixed << std::setprecision(2) << result_unlimited.avg_read_latency_us << " us"
-              << std::string(20 - std::to_string((int)result_unlimited.avg_read_latency_us).length() - 6, ' ')
-              << std::fixed << std::setprecision(2) << result_limited.avg_read_latency_us << " us" << std::endl;
+              << std::setw(20) << avg_unlim.str() << avg_lim.str() << std::endl;
 
     std::cout << std::left << std::setw(15) << "Read P99 Lat" 
-              << std::fixed << std::setprecision(2) << result_unlimited.p99_read_latency_us << " us"
-              << std::string(20 - std::to_string((int)result_unlimited.p99_read_latency_us).length() - 6, ' ')
-              << std::fixed << std::setprecision(2) << result_limited.p99_read_latency_us << " us" << std::endl;
+              << std::setw(20) << p99_unlim.str() << p99_lim.str() << std::endl;
 
     std::cout << "\nAnalysis:" << std::endl;
     if (result_limited.avg_read_latency_us < result_unlimited.avg_read_latency_us) {
