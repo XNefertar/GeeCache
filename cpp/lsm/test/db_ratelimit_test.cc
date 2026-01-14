@@ -133,13 +133,16 @@ int main() {
     std::cout << "=== Mixed Workload QoS Test: Latency under Load ===" << std::endl;
     std::cout << "Scenario: 2MB/s Write Limit vs Unlimited. Background Reader (QoS target). (sync=false to expose mem-speed writer)" << std::endl;
 
+    const int write_mb = 5;
+    const double limit_rate = 2.0 * 1024 * 1024;
+
     // 1. Unlimited Run
     // Using 5MB to avoid crushing the helper/test env with too much load causing accidents
-    TestResult result_unlimited = RunMixedLoadTest(false, 0, 5, false); // sync=false -> memory-speed writer
+    TestResult result_unlimited = RunMixedLoadTest(false, 0, write_mb, false); // sync=false -> memory-speed writer
 
     // 2. Limited Run (2MB/s)
     // 5MB at 2MB/s should take ~2.5s + sync overhead
-    TestResult result_limited = RunMixedLoadTest(true, 2.0 * 1024 * 1024, 5, false); // sync=false
+    TestResult result_limited = RunMixedLoadTest(true, limit_rate, write_mb, false); // sync=false
 
     std::cout << "\n=== Comparative Results ===" << std::endl;
     std::cout << std::left << std::setw(15) << "Metric" 
@@ -164,17 +167,49 @@ int main() {
               << std::setw(20) << p99_unlim.str() << p99_lim.str() << std::endl;
 
     std::cout << "\nAnalysis:" << std::endl;
-    if (result_limited.avg_read_latency_us < result_unlimited.avg_read_latency_us) {
+
+    // --- Validation Logic ---
+    
+    // 1. Check Rate Limit Accuracy
+    // Expected time: 5MB / 2MB/s = 2.5 seconds = 2500 ms
+    double expected_seconds = (double(write_mb) * 1024 * 1024) / limit_rate;
+    long expected_ms = static_cast<long>(expected_seconds * 1000);
+    // Allow 20% tolerance
+    long tolerance_ms = static_cast<long>(expected_ms * 0.2); 
+
+    bool accurate_rate = std::abs(result_limited.write_duration_ms - expected_ms) < tolerance_ms;
+    
+    if (accurate_rate) {
+        std::cout << "PASS: Write duration matches rate limit target." << std::endl;
+        std::cout << "  Expected: " << expected_ms << "ms (±" << tolerance_ms << "ms)" << std::endl;
+        std::cout << "  Actual:   " << result_limited.write_duration_ms << "ms" << std::endl;
+    } else {
+        std::cout << "FAIL: Write duration outside expected range." << std::endl;
+        std::cout << "  Expected: " << expected_ms << "ms (±" << tolerance_ms << "ms)" << std::endl;
+        std::cout << "  Actual:   " << result_limited.write_duration_ms << "ms" << std::endl;
+    }
+
+    // 2. Check QoS Improvement (Latency)
+    // Rate limiting should improve read latency compared to unlimited spike
+    bool latency_improved = result_limited.avg_read_latency_us < result_unlimited.avg_read_latency_us;
+
+    if (latency_improved) {
         std::cout << "PASS: Rate limiting improved read latency by " 
                   << (result_unlimited.avg_read_latency_us / result_limited.avg_read_latency_us) 
                   << "x times!" << std::endl;
     } else {
-        std::cout << "WARN: Rate limiting did not significantly improve latency in this environment." << std::endl;
+        std::cout << "WARN: Rate limiting did not improve latency (Background noise low?)." << std::endl;
     }
 
+    // CLEANUP
     CleanDB("/tmp/lsm_test_mixed_on");
     CleanDB("/tmp/lsm_test_mixed_off");
 
-    return 0;
+    // Require both accuracy and improvement (or at least valid rate limiting) to pass
+    if (accurate_rate && latency_improved) {
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
