@@ -1,7 +1,6 @@
 #pragma once
 #include <chrono>
 #include <mutex>
-#include <atomic>
 #include <algorithm>
 
 namespace lsm {
