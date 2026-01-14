@@ -38,6 +38,10 @@ namespace lsm {
             _tokens -= bytes;
             return;
         }
+        if (_refill_rate <= 0) {
+            // Cannot satisfy request if no refill rate
+            return;
+        }
 
         // 计算需要等待的时间
         double needed = bytes - _tokens;
