@@ -113,7 +113,8 @@ TestResult RunMixedLoadTest(bool enable_limit, double limit_rate, int write_mb, 
     
     for (auto v : sorted_latencies) sum += v;
     double avg = sorted_latencies.empty() ? 0 : sum / sorted_latencies.size();
-    double p99 = sorted_latencies.empty() ? 0 : sorted_latencies[size_t(sorted_latencies.size() * 0.99)];
+    size_t p99_idx = sorted_latencies.empty() ? 0 : std::min(size_t((sorted_latencies.size() - 1) * 0.99), sorted_latencies.size() - 1);
+    double p99 = sorted_latencies.empty() ? 0 : sorted_latencies[p99_idx];
 
     return {write_duration, avg, p99};
 }
