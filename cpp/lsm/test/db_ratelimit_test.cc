@@ -26,16 +26,15 @@ struct TestResult {
     double p99_read_latency_us;
 };
 
-TestResult RunMixedLoadTest(bool enable_limit, double limit_rate, int write_mb) {
+TestResult RunMixedLoadTest(bool enable_limit, double limit_rate, int write_mb, bool use_sync) {
     std::string test_name = enable_limit ? "Limited" : "Unlimited";
     std::string db_path = "/tmp/lsm_test_mixed_" + std::string(enable_limit ? "on" : "off");
     CleanDB(db_path);
 
     Options opts;
-    // Emulate realistic scenario: 
-    // - Sync is ON (durability matters, and IO is the bottleneck)
-    // - Compaction is running
-    opts.sync = true; 
+
+    // 控制 sync 开关以比较内存速率（sync=false）下的效果
+    opts.sync = use_sync;
     
     if (enable_limit) {
         opts.write_rate_limit = limit_rate;
@@ -121,15 +120,15 @@ TestResult RunMixedLoadTest(bool enable_limit, double limit_rate, int write_mb) 
 
 int main() {
     std::cout << "=== Mixed Workload QoS Test: Latency under Load ===" << std::endl;
-    std::cout << "Scenario: 2MB/s Write Limit vs Unlimited. Background Reader (QoS target)." << std::endl;
+    std::cout << "Scenario: 2MB/s Write Limit vs Unlimited. Background Reader (QoS target). (sync=false to expose mem-speed writer)" << std::endl;
 
     // 1. Unlimited Run
     // Using 5MB to avoid crushing the helper/test env with too much load causing accidents
-    TestResult result_unlimited = RunMixedLoadTest(false, 0, 5); 
+    TestResult result_unlimited = RunMixedLoadTest(false, 0, 5, false); // sync=false -> memory-speed writer
 
     // 2. Limited Run (2MB/s)
     // 5MB at 2MB/s should take ~2.5s + sync overhead
-    TestResult result_limited = RunMixedLoadTest(true, 2.0 * 1024 * 1024, 5); 
+    TestResult result_limited = RunMixedLoadTest(true, 2.0 * 1024 * 1024, 5, false); // sync=false
 
     std::cout << "\n=== Comparative Results ===" << std::endl;
     std::cout << std::left << std::setw(15) << "Metric" 
