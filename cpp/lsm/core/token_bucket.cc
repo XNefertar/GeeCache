@@ -3,9 +3,9 @@
 
 namespace lsm {
     TokenBucket::TokenBucket(double capacity, double refill_rate)
-        : _tokens(capacity)
-        , _capacity(capacity)
-        , _refill_rate(refill_rate)
+        : _tokens(std::max(capacity, 0.0))
+        , _capacity(std::max(capacity, 0.0))
+        , _refill_rate(std::max(refill_rate, 1.0))  // Enforce minimum rate to avoid division by zero
         , _last_refill_time(Clock::now()) {}
 
     void TokenBucket::Refill() {
