@@ -1,5 +1,6 @@
 #include "version.h"
 #include "core/sstable/table.h"
+#include "core/coding.h"
 #include <algorithm>
 #include <iostream>
 #include <filesystem>
@@ -71,6 +72,11 @@ std::shared_ptr<Table> Version::GetTable(int file_number) const {
 }
 
 Table::Status Version::Get(const std::string& key, std::string* value) const {
+    auto in_range = [](const std::string& k, const FileMetaData* f) {
+        if (k > f->largest) return false;
+        if (k >= f->smallest) return true;
+        return CodingUtil::ExtractUserKey(k) == CodingUtil::ExtractUserKey(f->smallest);
+    };
     // Fast path for disjoint files
     if (_l0_disjoint) {
         auto it = std::upper_bound(_files_by_key.begin(), _files_by_key.end(), key, 
@@ -78,9 +84,21 @@ Table::Status Version::Get(const std::string& key, std::string* value) const {
                 return k < f->smallest;
             });
             
+        // Check the file that is strictly "greater" than key (because valid UserKey might appear "greater")
+        if (it != _files_by_key.end()) {
+            const FileMetaData* f = *it;
+            if (in_range(key, f)) {
+                std::shared_ptr<Table> table = GetTable(f->number);
+                if (table) {
+                     Table::Status status = table->Get(key, value);
+                     if (status != Table::kNotFound) return status;
+                }
+            }
+        }
+
         if (it != _files_by_key.begin()) {
             const FileMetaData* f = *(--it);
-            if (key <= f->largest) {
+            if (in_range(key, f)) {
                 std::shared_ptr<Table> table = GetTable(f->number);
                 if (table) { // Safety check
                     Table::Status status = table->Get(key, value);
@@ -94,7 +112,7 @@ Table::Status Version::Get(const std::string& key, std::string* value) const {
         // Search L0 files in reverse order (newest first)
         // L0 files can overlap, so we must check all of them that might contain the key
         for (auto it = _files[0].rbegin(); it != _files[0].rend(); ++it) {
-            if (key >= it->smallest && key <= it->largest) {
+            if (in_range(key, &(*it))) {
                 std::shared_ptr<Table> table = GetTable(it->number);
                 if (table) {
                     Table::Status status = table->Get(key, value);
@@ -112,7 +130,7 @@ Table::Status Version::Get(const std::string& key, std::string* value) const {
             [](const FileMetaData& f, const std::string& k) {
                 return f.largest < k;
             });
-        if (it != files.end() && key >= it->smallest && key <= it->largest) {
+        if (it != files.end() && in_range(key, &(*it))) {
             std::shared_ptr<Table> table = GetTable(it->number);
             if (table) {
                 Table::Status status = table->Get(key, value);
