@@ -7,9 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 查找并链接 Snappy (可选的压缩库)
 find_package(Snappy)
 
-# 头文件目录
-include_directories(include)
-include_directories(.)
+# 头文件目录：通过目标接口公开给下游目标
+target_include_directories(lsm PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 # 源代码
 file(GLOB_RECURSE SOURCES "core/*.cc" "util/*.cc")
