@@ -71,7 +71,8 @@ std::shared_ptr<Table> Version::GetTable(int file_number) const {
     return nullptr;
 }
 
-Table::Status Version::Get(const std::string& key, std::string* value) const {    auto in_range = [](const std::string& k, const FileMetaData* f) {
+Table::Status Version::Get(const std::string& key, std::string* value) const {
+    auto in_range = [](const std::string& k, const FileMetaData* f) {
         if (k > f->largest) return false;
         if (k >= f->smallest) return true;
         return CodingUtil::ExtractUserKey(k) == CodingUtil::ExtractUserKey(f->smallest);
