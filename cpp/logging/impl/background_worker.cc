@@ -95,11 +95,10 @@ namespace lsm {
                 }
             }
 
-            for (auto &sink : _sinks) {
-                sink->Flush();
-            }
-
             if (buffersToWrite.size() > 2) {
+                for (auto &sink : _sinks) {
+                    sink->Flush();
+                }
                 buffersToWrite.resize(2);
             }
 
