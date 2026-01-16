@@ -1,4 +1,4 @@
-#include "logging/impl/background_worker.h"
+#include "background_worker.h"
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -95,10 +95,8 @@ namespace lsm {
                 }
             }
 
-            if (buffersToWrite.size() > 2) {
-                for (auto &sink : _sinks) {
-                    sink->Flush();
-                }
+            for (auto &sink : _sinks) {
+                sink->Flush();
             }
 
             if (buffersToWrite.size() > 2) {

@@ -1,6 +1,8 @@
 #include "../lsm/include/lsm.h"
 #include "../rpc/socket.h"
 #include "../rpc/codec.h"
+#include "../logging/logging.h"
+#include "../logging/async_logging.h"
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -92,14 +94,14 @@ public:
         Socket listener;
         listener.Bind(port_);
         listener.Listen();
-        std::cout << "Storage Server listening on " << port_ << "..." << std::endl;
+        LOG_INFO << "Storage Server listening on " << port_ << "...";
 
         while (true) {
             try {
                 Socket client = listener.Accept();
                 std::thread(&StorageServer::HandleClientWrapper, this, std::move(client)).detach();
             } catch (const std::exception& e) {
-                std::cerr << "Accept error: " << e.what() << std::endl;
+                LOG_ERROR << "Accept error: " << e.what();
             }
         }
     }
@@ -110,14 +112,14 @@ private:
     }
 
     void HandleClient(Socket& sock) {
-        std::cout << "Client connected" << std::endl;
+        LOG_INFO << "Client connected";
         std::vector<char> buffer;
         std::vector<char> read_buf(4096);
 
         while (true) {
             ssize_t n = sock.Recv(read_buf.data(), read_buf.size());
             if (n <= 0) {
-                std::cout << "Client disconnected" << std::endl;
+                LOG_INFO << "Client disconnected";
                 break;
             }
             buffer.insert(buffer.end(), read_buf.begin(), read_buf.begin() + n);
@@ -181,11 +183,14 @@ int main(int argc, char** argv) {
     if (argc > 1) port = std::stoi(argv[1]);
     if (argc > 2) db_path = argv[2];
 
+    lsm::setupAsyncLogging("storage_server.log");
+    LOG_INFO << "Starting storage server on port " << port << " with db path " << db_path;
+
     try {
         StorageServer server(port, db_path);
         server.Run();
     } catch (const std::exception& e) {
-        std::cerr << "Fatal error: " << e.what() << std::endl;
+        LOG_FATAL << "Fatal error: " << e.what();
         return 1;
     }
 }
