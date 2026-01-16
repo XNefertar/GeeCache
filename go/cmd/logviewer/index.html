@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeeCache Log Viewer</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --text-color: #d4d4d4;
+            --sidebar-bg: #252526;
+            --sidebar-border: #333;
+            --accent-color: #007acc;
+            --log-info: #4ec9b0;
+            --log-warn: #cca700;
+            --log-error: #f48771;
+            --log-fatal: #ff0000;
+            --log-debug: #569cd6;
+            --log-trace: #808080;
+        }
+
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            background-color: var(--sidebar-bg);
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--sidebar-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: var(--accent-color);
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            background-color: #3c3c3c;
+            border: 1px solid #3c3c3c;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            width: 300px;
+        }
+
+        input[type="text"]:focus {
+            outline: 1px solid var(--accent-color);
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button.secondary {
+            background-color: #3c3c3c;
+        }
+
+        #log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            scroll-behavior: smooth;
+        }
+
+        .log-entry {
+            white-space: pre-wrap;
+            padding: 2px 5px;
+            border-bottom: 1px solid #2d2d2d;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .log-entry:hover {
+            background-color: #2a2d2e;
+        }
+
+        .timestamp {
+            color: #569cd6;
+            margin-right: 10px;
+        }
+
+        .level-INFO { color: var(--log-info); }
+        .level-WARN { color: var(--log-warn); }
+        .level-ERROR { color: var(--log-error); }
+        .level-FATAL { color: var(--log-fatal); font-weight: bold; }
+        .level-DEBUG { color: var(--log-debug); }
+        .level-TRACE { color: var(--log-trace); }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            display: none;
+        }
+        
+    </style>
+</head>
+<body>
+    <header>
+        <div style="display:flex; align-items:center; gap: 15px;">
+            <h1>GeeCache Logs</h1>
+            <select id="file-select" style="background: #3c3c3c; color: white; border: 1px solid #555; padding: 3px; border-radius: 3px; display: none;">
+                <option value="" disabled selected>Select log file</option>
+            </select>
+            <span id="status" style="font-size: 0.8em; color: #888;">Disconnected</span>
+        </div>
+        <div class="controls">
+            <label>
+                <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+            </label>
+            <input type="text" id="search-input" placeholder="Search logs (regex supported)...">
+            <button id="refresh-btn">Refresh</button>
+            <button id="clear-btn" class="secondary">Clear</button>
+        </div>
+    </header>
+
+    <div id="log-container">
+        <div class="loading">Loading logs...</div>
+    </div>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const searchInput = document.getElementById('search-input');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const autoScrollCheckbox = document.getElementById('auto-scroll');
+        const statusSpan = document.getElementById('status');
+        const fileSelect = document.getElementById('file-select');
+
+        let lastSize = 0;
+        let isPolling = false;
+        let pollInterval = null;
+
+        function formatLogLine(line) {
+            // Basic parsing logic based on current log format:
+            // 20260116 11:58:02.941302 INFO  Hello world - ...
+            const regex = /^(\d{8}\s\d{2}:\d{2}:\d{2}\.\d+)\s+(\w+)\s+(.*)$/;
+            const match = line.match(regex);
+
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+
+            if (match) {
+                const [_, ts, level, msg] = match;
+                div.innerHTML = `<span class="timestamp">${ts}</span><span class="level-${level.trim()}">[${level.trim()}]</span> ${escapeHtml(msg)}`;
+            } else {
+                div.textContent = line;
+            }
+            return div;
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
+        async function fetchFileList() {
+            try {
+                const response = await fetch('/api/files');
+                if (!response.ok) throw new Error("Failed to fetch file list");
+                const files = await response.json();
+                
+                if (files.length > 0) {
+                    fileSelect.style.display = 'inline-block';
+                    fileSelect.innerHTML = ''; // Clear existing
+                    
+                    let hasSelected = false;
+                    const savedFile = localStorage.getItem('lastLogFile');
+                    
+                    files.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f;
+                        opt.textContent = f;
+                        fileSelect.appendChild(opt);
+                        if (savedFile === f) {
+                            fileSelect.value = f;
+                            hasSelected = true;
+                        }
+                    });
+
+                    if (!hasSelected && files.length > 0) {
+                        fileSelect.value = files[0];
+                    }
+                    
+                    fetchLogs();
+                } else {
+                     statusSpan.textContent = "No log files found in directory.";
+                }
+            } catch (e) {
+                console.error(e);
+                statusSpan.textContent = "Error loading file list.";
+            }
+        }
+
+        async function fetchLogs() {
+            const currentFile = fileSelect.value;
+            if (!currentFile) return;
+            localStorage.setItem('lastLogFile', currentFile);
+
+            const query = searchInput.value;
+            const url = `/api/logs?file=${encodeURIComponent(currentFile)}&q=${encodeURIComponent(query)}`;
+            
+            try {
+                statusSpan.textContent = `Fetching ${currentFile}...`;
+                const response = await fetch(url);
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`${response.status} ${errText}`);
+                }
+                
+                const text = await response.text();
+                const lines = text.split('\n');
+                
+                // If simple refresh (no search change), functionality could be optimized to append only,
+                // but for simplicity we redraw if query is present, or append if tailing.
+                // However, our backend API currently returns a chunk of logs.
+                
+                const wasScrolledToBottom = logContainer.scrollHeight - logContainer.scrollTop === logContainer.clientHeight;
+
+                logContainer.innerHTML = ''; // Start fresh for now to handle search
+                
+                lines.forEach(line => {
+                    if (!line.trim()) return;
+                    logContainer.appendChild(formatLogLine(line));
+                });
+
+                if (autoScrollCheckbox.checked) {
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+                statusSpan.textContent = `Last updated: ${new Date().toLocaleTimeString()} (${lines.length} lines)`;
+
+            } catch (error) {
+                console.error("Error fetching logs:", error);
+                statusSpan.textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        fileSelect.addEventListener('change', fetchLogs);
+        
+        // Debounce search
+        let timeout = null;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(timeout);
+            timeout = setTimeout(fetchLogs, 300);
+        });
+
+        refreshBtn.addEventListener('click', fetchLogs);
+        
+        clearBtn.addEventListener('click', () => {
+            logContainer.innerHTML = '';
+        });
+
+        // Initial load
+        fetchFileList();
+
+        // Auto-refresh every 2 seconds
+        setInterval(fetchLogs, 2000); // This will call fetchLogs which uses the selected file
+
+
+    </script>
+</body>
+</html>
