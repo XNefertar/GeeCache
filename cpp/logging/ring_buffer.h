@@ -1,3 +1,7 @@
+#pragma once
+
+#include <cstring>
+
 namespace lsm {
     template <int SIZE>
     class FixedBuffer {
@@ -14,6 +18,9 @@ namespace lsm {
                 _cur += len;
             }
         }
+
+        char* current() { return _cur; }
+        void add(size_t len) { _cur += len; }
 
         const char* data() const { return _data; }
         int length() const { return static_cast<int>(_cur - _data); }
