@@ -34,6 +34,7 @@ namespace lsm {
     }
 
     void BackgroundWorker::addSink(std::shared_ptr<LogSink> sink) {
+        std::lock_guard<std::mutex> lock(_sinksMutex);
         _sinks.push_back(std::move(sink));
     }
 
@@ -89,14 +90,21 @@ namespace lsm {
                 buffersToWrite.erase(buffersToWrite.begin() + 2, buffersToWrite.end());
             }
 
+            // Copy sinks under lock to avoid holding lock during IO
+            std::vector<std::shared_ptr<LogSink>> sinksCopy;
+            {
+                std::lock_guard<std::mutex> lock(_sinksMutex);
+                sinksCopy = _sinks;
+            }
+
             for (const auto &buffer : buffersToWrite) {
-                for (auto &sink : _sinks) {
+                for (auto &sink : sinksCopy) {
                     sink->Write(buffer->data(), buffer->length());
                 }
             }
 
             if (buffersToWrite.size() > 2) {
-                for (auto &sink : _sinks) {
+                for (auto &sink : sinksCopy) {
                     sink->Flush();
                 }
                 buffersToWrite.resize(2);
@@ -119,8 +127,12 @@ namespace lsm {
             buffersToWrite.clear();
         }
 
-        for (auto &sink : _sinks) {
-            sink->Flush();
+        // Final flush: copy sinks under lock then flush
+        {
+            std::lock_guard<std::mutex> lock(_sinksMutex);
+            for (auto &sink : _sinks) {
+                sink->Flush();
+            }
         }
     }
 }

@@ -41,5 +41,7 @@ namespace lsm {
         BufferVector _buffers;
 
         std::vector<std::shared_ptr<LogSink>> _sinks;
+        // protect _sinks from concurrent add/iterate
+        std::mutex _sinksMutex;
     };
 }
