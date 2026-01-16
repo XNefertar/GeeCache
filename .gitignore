@@ -28,9 +28,10 @@ main
 
 # 忽略特定 Go 项目的二进制文件
 # 防止二进制文件名与目录名冲突，建议指定路径
-logviewer/logviewer
-k8s_server/k8s_server
-go/observability_demo
+go/cmd/logviewer/logviewer
+go/cmd/k8s_server/k8s_server
+# 如果 observability_demo 也在 go 目录下，也需要加前缀
+go/cmd/observability_demo
 go/server
 go/bench_main
 
