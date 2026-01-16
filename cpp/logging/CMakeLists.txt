@@ -28,6 +28,11 @@ if(UNIX)
     target_link_libraries(logging PUBLIC Threads::Threads)
 endif()
 
+# Benchmark executable
+add_executable(bench_logging bench_logging.cc)
+target_link_libraries(bench_logging PRIVATE logging Threads::Threads)
+
+
 target_compile_definitions(logging PUBLIC -DLSM_LOGGING)
 
 install(TARGETS logging
