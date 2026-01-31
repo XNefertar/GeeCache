@@ -3,31 +3,76 @@
 #include "impl/background_worker.h"
 #include "sinks/file_sink.h"
 #include <memory>
+#include <atomic>
+#include <cstring>
+#include <mutex>
 
 namespace lsm {
 
-static std::unique_ptr<BackgroundWorker> g_worker;
+    static std::atomic<BackgroundWorker*> g_worker_ptr{nullptr};
+    static std::unique_ptr<BackgroundWorker> g_worker_storage;
+    static std::once_flag g_worker_once;
 
-static void asyncOutput(const char* msg, int len) {
-    if (g_worker) {
-        g_worker->append(msg, len);
-    } else {
-        // Fallback or lost
-        fwrite(msg, 1, len, stdout);
-    }
-}
+    const int kThreadBufferSize = 4096;
 
-void setupAsyncLogging(const std::string& basename, int flushInterval) {
-    if (g_worker) {
-        return; // Already initialized
+    struct ThreadBuffer {
+        char buffer[kThreadBufferSize];
+        int offset = 0;
+
+        ~ThreadBuffer() {
+            flush();
+        }
+
+        void flush() {
+            if (offset > 0) {
+                BackgroundWorker* worker = g_worker_ptr.load(std::memory_order_acquire);
+                if (worker) {
+                    worker->append(buffer, offset);
+                }
+                offset = 0;
+            }
+        }
+
+        void append(const char* msg, int len) {
+            BackgroundWorker* worker = g_worker_ptr.load(std::memory_order_acquire);
+            if (!worker) {
+                 fwrite(msg, 1, len, stdout);
+                 return;
+            }
+
+            if (len >= kThreadBufferSize) {
+                flush();
+                worker->append(msg, len);
+                return;
+            }
+
+            if (offset + len > kThreadBufferSize) {
+                flush();
+            }
+
+            memcpy(buffer + offset, msg, len);
+            offset += len;
+        }
+    };
+
+    thread_local ThreadBuffer t_buffer;
+
+    static void asyncOutput(const char* msg, int len) {
+        t_buffer.append(msg, len);
     }
-    
-    g_worker = std::make_unique<BackgroundWorker>(flushInterval);
-    g_worker->addSink(std::make_shared<FileSink>(basename));
-    
-    Logger::setOutput(asyncOutput);
-    
-    g_worker->start();
-}
+
+
+    void setupAsyncLogging(const std::string& basename, int flushInterval) {
+        std::call_once(g_worker_once, [&]() {
+            auto worker = std::make_unique<BackgroundWorker>(flushInterval);
+            worker->addSink(std::make_shared<FileSink>(basename));
+            worker->start();
+
+            g_worker_ptr.store(worker.get(), std::memory_order_release);
+            g_worker_storage = std::move(worker);
+
+            Logger::setOutput(asyncOutput);
+        });
+    }
 
 }
