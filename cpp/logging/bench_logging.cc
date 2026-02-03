@@ -49,7 +49,7 @@ void bench(bool async, int threads, int num_logs_per_thread) {
     // However, LogStream destruction calls append(), checking submission latency.
 
     double elapsed_sec = std::chrono::duration<double>(t2 - t1).count();
-    long total_logs = threads * num_logs_per_thread;
+    long total_logs = static_cast<long>(threads) * num_logs_per_thread;
     
     std::cout << (async ? "Async" : "Sync/Console") << " Logging: " 
               << total_logs << " logs in " << elapsed_sec << "s. "
