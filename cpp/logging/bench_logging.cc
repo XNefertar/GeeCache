@@ -63,6 +63,11 @@ int main(int argc, char* argv[]) {
     
     if (argc > 1) threads = std::atoi(argv[1]);
     if (argc > 2) count = std::atoi(argv[2]);
+    
+    if (threads <= 0 || count <= 0) {
+        std::cerr << "Usage: " << argv[0] << " [threads > 0] [logs_per_thread > 0]" << std::endl;
+        return 1;
+    }
 
     std::cout << "Benchmarking with " << threads << " threads, " << count << " logs each." << std::endl;
 
