@@ -7,6 +7,8 @@
 #include <iostream>
 #include <string>
 
+const int kFlushInterval = 3;
+
 // Simple benchmark for logging
 void bench(bool async, int threads, int num_logs_per_thread) {
     std::atomic<bool> start_flag{false};
@@ -17,7 +19,7 @@ void bench(bool async, int threads, int num_logs_per_thread) {
     
     // Setup logging
     if (async) {
-        lsm::setupAsyncLogging(filename);
+        lsm::setupAsyncLogging(filename, kFlushInterval);
     } else {
         lsm::Logger::setOutput(lsm::ConsoleOutput);
     }
@@ -75,7 +77,7 @@ int main(int argc, char* argv[]) {
     bench(true, threads, count);
     
     // Allow background worker to finish flushing
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(kFlushInterval + 1));
     
     return 0;
 }
