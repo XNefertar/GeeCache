@@ -10,7 +10,15 @@
 namespace lsm {
 
     static std::atomic<BackgroundWorker*> g_worker_ptr{nullptr};
-    static std::unique_ptr<BackgroundWorker> g_worker_storage;
+
+    struct WorkerHolder {
+        std::unique_ptr<BackgroundWorker> worker;
+        ~WorkerHolder() {
+            g_worker_ptr.store(nullptr, std::memory_order_release);
+        }
+    };
+
+    static WorkerHolder g_worker_storage;
     static std::once_flag g_worker_once;
 
     const int kThreadBufferSize = 4096;
@@ -69,7 +77,7 @@ namespace lsm {
             worker->start();
 
             g_worker_ptr.store(worker.get(), std::memory_order_release);
-            g_worker_storage = std::move(worker);
+            g_worker_storage.worker = std::move(worker);
 
             Logger::setOutput(asyncOutput);
         });
