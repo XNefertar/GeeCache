@@ -58,6 +58,8 @@ namespace lsm
         Impl _impl;
     };
 
+    void ConsoleOutput(const char *msg, int len);
+
 #define LOG_TRACE                              \
     if (lsm::Logger::logLevel() <= lsm::TRACE) \
     lsm::Logger(__FILE__, __LINE__, lsm::TRACE).stream()

@@ -14,10 +14,15 @@ namespace lsm
     __thread char t_time[64];
     __thread time_t t_last_second;
 
-    void defaultOutput(const char *msg, int len)
+    void ConsoleOutput(const char *msg, int len)
     {
         size_t n = fwrite(msg, 1, len, stdout);
         (void)n;
+    }
+    
+    void defaultOutput(const char *msg, int len)
+    {
+        ConsoleOutput(msg, len);
     }
 
     void defaultFlush()

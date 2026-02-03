@@ -19,13 +19,8 @@ void bench(bool async, int threads, int num_logs_per_thread) {
     if (async) {
         lsm::setupAsyncLogging(filename);
     } else {
-        // Default is stdout, but we want to test file write speed roughly or just formatting overhead if stdout is redirected?
-        // Actually logging.cc default is stdout. To test sync file write we would need a SyncFileSink.
-        // For now let's compare Async vs Default(stdout/stderr) mixed, OR just measure Async overhead.
-        // Actually, let's just measure "Time to write X logs" with async enabled.
+        lsm::Logger::setOutput(lsm::ConsoleOutput);
     }
-
-    auto start_time = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < threads; ++i) {
         workers.emplace_back([&, i]() {
