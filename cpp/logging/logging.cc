@@ -89,7 +89,16 @@ namespace lsm
         _stream << LogLevelName[level];
         if (savedErrno != 0)
         {
-            _stream << strerror_r(savedErrno, t_time, sizeof(t_time)) << " (errno=" << savedErrno << ") ";
+            #if defined(__GLIBC__) && defined(_GNU_SOURCE)
+                char errbuf[128];
+                char *msg = strerror_r(savedErrno, errbuf, sizeof(errbuf));
+                _stream << msg << " (errno=" << savedErrno << ") ";
+            #else
+                char errbuf[128];
+                int rc = strerror_r(savedErrno, errbuf, sizeof(errbuf));
+                (void)rc;
+                _stream << errbuf << " (errno=" << savedErrno << ") ";
+            #endif
         }
     }
 
