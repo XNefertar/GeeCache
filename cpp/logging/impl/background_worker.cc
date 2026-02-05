@@ -21,6 +21,9 @@ namespace lsm {
     }
 
     void BackgroundWorker::start() {
+        if (_thread.joinable()) {
+            return;
+        }
         _running.store(true);
         _thread = std::thread(&BackgroundWorker::threadLoop, this);
     }
