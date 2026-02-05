@@ -81,11 +81,22 @@ namespace lsm {
         uintptr_t v = reinterpret_cast<uintptr_t>(p);
         if (_buffer.avail() >= kMaxNumericSize) {
             char *buf = _buffer.current();
-            buf[0] = '0';
-            buf[1] = 'x';
-            size_t len = 2; // TODO: Implement hex conversion
-            // Simplified for brevity, use snprintf
-            len = snprintf(buf, kMaxNumericSize, "%p", p);
+            const char hex[] = "0123456789abcdef";
+            char *q = buf;
+
+            uintptr_t x = v;
+            do {
+                int lsd = static_cast<int>(x & 0xF);
+                x >>= 4;
+                *q++ = hex[lsd];
+            } while (x != 0);
+
+            *q++ = 'x';
+            *q++ = '0';
+
+            *q = '\0';
+            std::reverse(buf, q);
+            size_t len = q - buf;
             _buffer.add(len);
         }
         return *this;
