@@ -6,6 +6,7 @@
 #include <ctime>
 #include <sys/time.h>
 #include <thread>
+#include <atomic>
 #include <cassert>
 
 namespace lsm
@@ -30,10 +31,9 @@ namespace lsm
         fflush(stdout);
     }
 
-    Logger::OutputFunc g_output = defaultOutput;
-    Logger::FlushFunc g_flush = defaultFlush;
-
-    LogLevel g_logLevel = INFO;
+    std::atomic<Logger::OutputFunc> g_output{defaultOutput};
+    std::atomic<Logger::FlushFunc> g_flush{defaultFlush};
+    std::atomic<LogLevel> g_logLevel{INFO};
 
     const char *LogLevelName[NUM_LOG_LEVELS] =
         {
@@ -102,8 +102,7 @@ namespace lsm
         }
     }
 
-    void Logger::Impl::finish()
-    {
+    void Logger::Impl::finish() {
         _stream << " - " << _basename << ':' << _line << '\n';
     }
 
@@ -117,36 +116,37 @@ namespace lsm
     {
     }
 
-    Logger::~Logger()
-    {
+    Logger::~Logger() {
         _impl.finish();
         const LogStream::Buffer &buf(stream().buffer());
-        g_output(buf.data(), buf.length());
+        auto out = g_output.load(std::memory_order_acquire);
+        if (out) {
+            out(buf.data(), buf.length());
+        }
         if (_impl._level == FATAL)
         {
-            g_flush();
+            auto flush = g_flush.load(std::memory_order_acquire);
+            if (flush) {
+                flush();
+            }
             abort();
         }
     }
 
-    LogLevel Logger::logLevel()
-    {
-        return g_logLevel;
+    LogLevel Logger::logLevel() {
+        return g_logLevel.load(std::memory_order_acquire);
     }
 
-    void Logger::setLogLevel(LogLevel level)
-    {
-        g_logLevel = level;
+    void Logger::setLogLevel(LogLevel level) {
+        g_logLevel.store(level,  std::memory_order_release);
     }
 
-    void Logger::setOutput(OutputFunc out)
-    {
-        g_output = out;
+    void Logger::setOutput(OutputFunc out) {
+        g_output.store(out, std::memory_order_release);
     }
 
-    void Logger::setFlush(FlushFunc flush)
-    {
-        g_flush = flush;
+    void Logger::setFlush(FlushFunc flush) {
+        g_flush.store(flush, std::memory_order_release);
     }
 
 }
