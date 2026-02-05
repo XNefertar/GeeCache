@@ -58,6 +58,7 @@ namespace lsm
         void resetBuffer() { _buffer.reset(); }
 
     private:
+        // TODO: Implement this to catch unsupported types at compile time
         void staticCheck();
 
         template <typename T>
