@@ -15,7 +15,7 @@ namespace lsm
         virtual ~LogSink() = default;
     };
 
-    enum LogLevel
+    enum class LogLevel
     {
         TRACE,
         DEBUG,
