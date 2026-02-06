@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -20,6 +21,22 @@ var (
 	logDir        string
 	port          int
 	validFileName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+)
+
+var (
+	ErrMissingFilename       = errors.New("filename parameter missing")
+	ErrInvalidFilenameFormat = errors.New("invalid filename format")
+	ErrInvalidFilenameChars  = errors.New("invalid characters in filename")
+	ErrPathTraversalDetected = errors.New("path traversal detected")
+	ErrLogFileNotFound       = errors.New("log file not found")
+	ErrLogFileAccessDenied   = errors.New("log file access denied")
+	ErrLogFileOpenFailed     = errors.New("failed to open log file")
+	ErrLogFileScanFailed     = errors.New("failed to scan log file")
+)
+
+const (
+	maxLogLines    = 2000
+	maxLogLineSize = 10 * 1024 * 1024 // 10 MB
 )
 
 func init() {
@@ -53,51 +70,92 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-func handleLogs(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
-	filename := r.URL.Query().Get("file")
+func sanitizeFileName(filename string) (string, error) {
 	if filename == "" {
-		http.Error(w, "File parameter missing", 400)
-		return
+		return "", ErrMissingFilename
 	}
 
 	cleanName := filepath.Base(filename)
 	if cleanName != filename || cleanName == "." || cleanName == ".." {
-		http.Error(w, "Invalid file name format", 400)
-		return
+		return "", ErrInvalidFilenameFormat
 	}
 
-	// 2. 白名单正则校验 (既防攻击也防特殊字符)
 	if !validFileName.MatchString(cleanName) {
-		http.Error(w, "Invalid characters in file name", 400)
-		return
+		return "", ErrInvalidFilenameChars
 	}
 
-	// 3. 构造完整路径
 	fullPath := filepath.Join(logDir, cleanName)
 
-	// 4. 物理路径校验 (防御符号链接穿越)
-	// 注意：如果文件不存在，EvalSymlinks 会报错。
-	// 如果是读取现有日志，这种写法很完美。
 	realPath, err := filepath.EvalSymlinks(fullPath)
 	if err != nil {
-		// 如果文件不存在，根据业务逻辑决定是报404还是403
-		http.Error(w, "File not found or access denied", 404)
-		return
+		return "", ErrLogFileNotFound
 	}
 
-	// 确保 logDir 也是绝对路径且经过清洗
 	absLogDir, _ := filepath.Abs(logDir)
-
-	// 最终前缀检查
 	if !strings.HasPrefix(realPath, absLogDir+string(os.PathSeparator)) {
-		http.Error(w, "Path escape detected", 403)
+		return "", ErrPathTraversalDetected
+	}
+
+	return realPath, nil
+}
+
+func streamFilteredLogLines(w http.ResponseWriter, file *os.File, queryLower string) error {
+	var lines []string
+	scanner := bufio.NewScanner(file)
+
+	// Create a large buffer to handle long log lines if necessary
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, maxLogLineSize)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if queryLower == "" || strings.Contains(strings.ToLower(line), queryLower) {
+			if len(lines) >= maxLogLines {
+				lines = lines[1:] // Drop the oldest line
+			}
+			lines = append(lines, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		// If we haven't found any lines, treat this as a failure
+		if len(lines) == 0 {
+			return fmt.Errorf("scan failed: %w", err)
+		}
+		// Otherwise, log error and notify client of truncation, but serve what we have
+		log.Printf("Error scanning file (partial content): %v", err)
+		w.Header().Set("X-Log-Truncated", "true")
+		w.Header().Set("X-Log-Error", err.Error())
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	for _, line := range lines {
+		w.Write([]byte(line + "\n"))
+	}
+	return nil
+}
+
+func handleLogs(w http.ResponseWriter, r *http.Request) {
+	filename := r.URL.Query().Get("file")
+
+	logFilePath, err := sanitizeFileName(filename)
+	if err != nil {
+		switch err {
+		case ErrMissingFilename:
+			http.Error(w, "Filename parameter is required", 400)
+		case ErrInvalidFilenameFormat, ErrInvalidFilenameChars:
+			http.Error(w, "Invalid filename format", 400)
+		case ErrPathTraversalDetected:
+			http.Error(w, "Path traversal detected", 400)
+		case ErrLogFileNotFound:
+			http.Error(w, "Log file not found", 404)
+		default:
+			http.Error(w, "Internal Server Error", 500)
+		}
 		return
 	}
-	logFilePath := realPath
 
 	// limit := 1000 // Hardcoded limit for now
-
 	file, err := os.Open(logFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -111,40 +169,12 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	// Simple implementation: Read all, filter, return last N
 	// For production, this should use seek or 'tail' logic.
+	query := r.URL.Query().Get("q")
+	queryLower := strings.ToLower(query)
 
-	var lines []string
-	scanner := bufio.NewScanner(file)
-
-	// Create a large buffer to handle long log lines if necessary
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if query != "" {
-			if strings.Contains(strings.ToLower(line), strings.ToLower(query)) {
-				lines = append(lines, line)
-			}
-		} else {
-			lines = append(lines, line)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		// Log error but continue serving what we have
-		log.Printf("Error scanning file: %v", err)
-	}
-
-	// Helper to get last N lines
-	maxLines := 2000
-	start := 0
-	if len(lines) > maxLines {
-		start = len(lines) - maxLines
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	for i := start; i < len(lines); i++ {
-		w.Write([]byte(lines[i] + "\n"))
+	if err := streamFilteredLogLines(w, file, queryLower); err != nil {
+		http.Error(w, fmt.Sprintf("Error processing log file: %v", err), 500)
+		return
 	}
 }
 
