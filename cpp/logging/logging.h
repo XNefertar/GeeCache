@@ -38,7 +38,7 @@ namespace lsm
         static LogLevel logLevel();
         static void setLogLevel(LogLevel level);
 
-        typedef void (*OutputFunc)(const char *msg, int len);
+        typedef void (*OutputFunc)(const char *msg, size_t len);
         typedef void (*FlushFunc)();
         static void setOutput(OutputFunc);
         static void setFlush(FlushFunc);
@@ -58,7 +58,7 @@ namespace lsm
         Impl _impl;
     };
 
-    void ConsoleOutput(const char *msg, int len);
+    void ConsoleOutput(const char *msg, size_t len);
 
     #define LOG_INFO                                       \
         if (lsm::Logger::logLevel() > lsm::LogLevel::INFO) {}        \

@@ -65,7 +65,7 @@ namespace lsm {
 
     thread_local ThreadBuffer t_buffer;
 
-    static void asyncOutput(const char* msg, int len) {
+    static void asyncOutput(const char* msg, size_t len) {
         t_buffer.append(msg, len);
     }
 
