@@ -161,14 +161,18 @@
         function formatLogLine(line) {
             // Basic parsing logic based on current log format:
             // 20260116 11:58:02.941302 INFO  Hello world - ...
-            const regex = /^(\d{8}\s\d{2}:\d{2}:\d{2}\.\d+)\s+(\w+)\s+(.*)$/;
-            const match = line.match(regex);
+            // Fix: Use prefix matching and substring to avoid ReDoS vulnerability in /... \s+ (.*) $/.
+            // The original regex had potential O(N^2) backtracking on lines composed largely of spaces.
+            const prefixRegex = /^(\d{8}\s\d{2}:\d{2}:\d{2}\.\d+)\s+(\w+)\s+/;
+            const match = line.match(prefixRegex);
 
             const div = document.createElement('div');
             div.className = 'log-entry';
 
             if (match) {
-                const [_, ts, level, msg] = match;
+                const ts = match[1];
+                const level = match[2];
+                const msg = line.substring(match[0].length);
                 div.innerHTML = `<span class="timestamp">${ts}</span><span class="level-${level.trim()}">[${level.trim()}]</span> ${escapeHtml(msg)}`;
             } else {
                 div.textContent = line;
