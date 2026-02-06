@@ -33,9 +33,9 @@ namespace lsm
 
     std::atomic<Logger::OutputFunc> g_output{defaultOutput};
     std::atomic<Logger::FlushFunc> g_flush{defaultFlush};
-    std::atomic<LogLevel> g_logLevel{INFO};
+    std::atomic<LogLevel> g_logLevel{LogLevel::INFO};
 
-    const char *LogLevelName[NUM_LOG_LEVELS] =
+    const char *LogLevelName[static_cast<unsigned long>(LogLevel::NUM_LOG_LEVELS)] =
         {
             "TRACE ",
             "DEBUG ",
@@ -86,7 +86,7 @@ namespace lsm
         _stream << T(t_time, 17) << "." << microseconds << " ";
         // Wrap thread id logic?
         // _stream << std::this_thread::get_id() << " ";
-        _stream << LogLevelName[level];
+        _stream << LogLevelName[static_cast<unsigned long>(level)];
         if (savedErrno != 0)
         {
             #if defined(__GLIBC__) && defined(_GNU_SOURCE)
@@ -112,7 +112,7 @@ namespace lsm
     }
 
     Logger::Logger(const char *file, int line, bool toAbort)
-        : _impl(toAbort ? FATAL : ERROR, errno, file, line)
+        : _impl(toAbort ? LogLevel::FATAL : LogLevel::ERROR, errno, file, line)
     {
     }
 
@@ -123,7 +123,7 @@ namespace lsm
         if (out) {
             out(buf.data(), buf.length());
         }
-        if (_impl._level == FATAL)
+        if (_impl._level == LogLevel::FATAL)
         {
             auto flush = g_flush.load(std::memory_order_acquire);
             if (flush) {

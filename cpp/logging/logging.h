@@ -61,19 +61,19 @@ namespace lsm
     void ConsoleOutput(const char *msg, int len);
 
     #define LOG_INFO                                       \
-        if (lsm::Logger::logLevel() > lsm::INFO) {}        \
-        else lsm::Logger(__FILE__, __LINE__, lsm::INFO).stream()
+        if (lsm::Logger::logLevel() > lsm::LogLevel::INFO) {}        \
+        else lsm::Logger(__FILE__, __LINE__, lsm::LogLevel::INFO).stream()
 
     #define LOG_DEBUG                                      \
-        if (lsm::Logger::logLevel() > lsm::DEBUG) {}       \
-        else lsm::Logger(__FILE__, __LINE__, lsm::DEBUG).stream()
+        if (lsm::Logger::logLevel() > lsm::LogLevel::DEBUG) {}       \
+        else lsm::Logger(__FILE__, __LINE__, lsm::LogLevel::DEBUG).stream()
 
     #define LOG_TRACE                                      \
-        if (lsm::Logger::logLevel() > lsm::TRACE) {}       \
-        else lsm::Logger(__FILE__, __LINE__, lsm::TRACE).stream()
+        if (lsm::Logger::logLevel() > lsm::LogLevel::TRACE) {}       \
+        else lsm::Logger(__FILE__, __LINE__, lsm::LogLevel::TRACE).stream()
 
-    #define LOG_WARN lsm::Logger(__FILE__, __LINE__, lsm::WARN).stream()
-    #define LOG_ERROR lsm::Logger(__FILE__, __LINE__, lsm::ERROR).stream()
-    #define LOG_FATAL lsm::Logger(__FILE__, __LINE__, lsm::FATAL).stream()
+    #define LOG_WARN lsm::Logger(__FILE__, __LINE__, lsm::LogLevel::WARN).stream()
+    #define LOG_ERROR lsm::Logger(__FILE__, __LINE__, lsm::LogLevel::ERROR).stream()
+    #define LOG_FATAL lsm::Logger(__FILE__, __LINE__, lsm::LogLevel::FATAL).stream()
 
 } // namespace lsm
