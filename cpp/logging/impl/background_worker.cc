@@ -44,7 +44,7 @@ namespace lsm {
     void BackgroundWorker::append(const char *data, int len) {
         std::lock_guard<std::mutex> lock(_mutex);
 
-        if (_currentBuffer->avail() > len) {
+        if (_currentBuffer->avail() >= len) {
             _currentBuffer->append(data, len);
         } else {
             _buffers.push_back(std::move(_currentBuffer));

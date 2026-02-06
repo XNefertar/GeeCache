@@ -13,7 +13,7 @@ namespace lsm {
         FixedBuffer& operator=(const FixedBuffer&) = delete;
 
         void append(const char* buf, size_t len) {
-            if (avail() > len) {
+            if (avail() >= len) {
                 memcpy(_cur, buf, len);
                 _cur += len;
             }
