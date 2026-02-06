@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -16,8 +17,9 @@ import (
 var staticFiles embed.FS
 
 var (
-	logDir string
-	port   int
+	logDir        string
+	port          int
+	validFileName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
 func init() {
@@ -58,7 +60,41 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "File parameter missing", 400)
 		return
 	}
-	logFilePath := filepath.Join(logDir, filename)
+
+	cleanName := filepath.Base(filename)
+	if cleanName != filename || cleanName == "." || cleanName == ".." {
+		http.Error(w, "Invalid file name format", 400)
+		return
+	}
+
+	// 2. 白名单正则校验 (既防攻击也防特殊字符)
+	if !validFileName.MatchString(cleanName) {
+		http.Error(w, "Invalid characters in file name", 400)
+		return
+	}
+
+	// 3. 构造完整路径
+	fullPath := filepath.Join(logDir, cleanName)
+
+	// 4. 物理路径校验 (防御符号链接穿越)
+	// 注意：如果文件不存在，EvalSymlinks 会报错。
+	// 如果是读取现有日志，这种写法很完美。
+	realPath, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		// 如果文件不存在，根据业务逻辑决定是报404还是403
+		http.Error(w, "File not found or access denied", 404)
+		return
+	}
+
+	// 确保 logDir 也是绝对路径且经过清洗
+	absLogDir, _ := filepath.Abs(logDir)
+
+	// 最终前缀检查
+	if !strings.HasPrefix(realPath, absLogDir+string(os.PathSeparator)) {
+		http.Error(w, "Path escape detected", 403)
+		return
+	}
+	logFilePath := realPath
 
 	// limit := 1000 // Hardcoded limit for now
 
