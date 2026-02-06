@@ -10,6 +10,8 @@ file(GLOB LOGGING_SINKS ${CMAKE_CURRENT_SOURCE_DIR}/sinks/*.cc)
 
 set(LOGGING_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/logging.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/async_logging.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_stream.cc
 )
 
 list(APPEND LOGGING_SOURCES ${LOGGING_IMPL} ${LOGGING_SINKS})
@@ -26,6 +28,11 @@ if(UNIX)
     target_link_libraries(logging PUBLIC Threads::Threads)
 endif()
 
+# Benchmark executable
+add_executable(bench_logging bench_logging.cc)
+target_link_libraries(bench_logging PRIVATE logging Threads::Threads)
+
+
 target_compile_definitions(logging PUBLIC -DLSM_LOGGING)
 
 install(TARGETS logging
@@ -38,6 +45,8 @@ install(TARGETS logging
 install(FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/logging.h
     ${CMAKE_CURRENT_SOURCE_DIR}/ring_buffer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/async_logging.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_stream.h
     DESTINATION include/geecache/logging
 )
 

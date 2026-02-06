@@ -1,5 +1,7 @@
 #include "../rpc/server.h"
 #include "../lsm/include/lsm.h"
+#include "../logging/logging.h"
+#include "../logging/async_logging.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -105,7 +107,7 @@ private:
         lsm_options_destroy(opts);
 
         if (err) {
-            std::cerr << "Failed to open DB " << group << ": " << err << std::endl;
+            LOG_ERROR << "Failed to open DB " << group << ": " << err;
             lsm_free(err);
             return nullptr;
         }
@@ -169,6 +171,9 @@ private:
 int main(int argc, char** argv) {
     int port = 9000;
     if (argc > 1) port = std::atoi(argv[1]);
+
+    lsm::setupAsyncLogging("geecache_server.log");
+    LOG_INFO << "Starting CacheServer on port " << port;
 
     CacheServer cache("data");
     geecache::rpc::Server server;
