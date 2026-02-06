@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"embed"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -193,12 +194,8 @@ func handleFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte("["))
-	for i, f := range files {
-		if i > 0 {
-			w.Write([]byte(","))
-		}
-		w.Write([]byte(fmt.Sprintf("\"%s\"", f)))
+	if err := json.NewEncoder(w).Encode(files); err != nil {
+		http.Error(w, fmt.Sprintf("Error encoding response: %v", err), 500)
+		return
 	}
-	w.Write([]byte("]"))
 }
