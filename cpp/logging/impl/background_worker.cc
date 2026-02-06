@@ -53,6 +53,7 @@ namespace lsm {
                 _currentBuffer = std::move(_nextBuffer);
             } else {
                 _currentBuffer = std::make_unique<FixedBuffer<kBufferSize>>();
+                _currentBuffer->reset();
             }
 
             _currentBuffer->append(data, len);
