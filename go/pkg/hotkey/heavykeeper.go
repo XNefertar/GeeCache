@@ -38,11 +38,12 @@ type Bucket struct {
 }
 
 type HeavyKeeper struct {
-	buckets []Bucket
-	k       int
-	b       float64
-	topK    *MinHeap
-	mu      sync.Mutex
+	buckets             []Bucket
+	k                   int
+	b                   float64
+	topK                *MinHeap
+	fingerprintIndexMap map[uint32]int
+	mu                  sync.Mutex
 }
 
 func NewHeavyKeeper(size int, k int, b float64) *HeavyKeeper {
@@ -101,18 +102,29 @@ func (hk *HeavyKeeper) insertInternal(item string) int {
 		}
 	}
 
-	if hk.topK.Len() < hk.k {
-		heap.Push(hk.topK, Item{
-			Fingerprint: bucket.Fingerprint,
-			Count:       bucket.Count,
-		})
+	if heapIdx, exists := hk.fingerprintIndexMap[bucket.Fingerprint]; exists {
+		(*hk.topK)[heapIdx].Count = bucket.Count
+		heap.Fix(hk.topK, heapIdx)
 	} else {
-		if bucket.Count > (*hk.topK)[0].Count {
-			heap.Pop(hk.topK)
+		if hk.topK.Len() < hk.k {
 			heap.Push(hk.topK, Item{
 				Fingerprint: bucket.Fingerprint,
 				Count:       bucket.Count,
 			})
+			hk.fingerprintIndexMap[bucket.Fingerprint] = hk.topK.Len() - 1
+		} else {
+			if bucket.Count > (*hk.topK)[0].Count {
+				// 移除堆中最小的元素
+				removed := heap.Pop(hk.topK).(Item)
+				delete(hk.fingerprintIndexMap, removed.Fingerprint)
+
+				// 插入新元素
+				heap.Push(hk.topK, Item{
+					Fingerprint: bucket.Fingerprint,
+					Count:       bucket.Count,
+				})
+				hk.fingerprintIndexMap[bucket.Fingerprint] = hk.topK.Len() - 1
+			}
 		}
 	}
 
