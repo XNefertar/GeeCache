@@ -20,7 +20,8 @@ target_include_directories(lsm PUBLIC
 )
 
 find_package(Threads REQUIRED)
-target_link_libraries(lsm PRIVATE Threads::Threads m)
+target_link_libraries(lsm PRIVATE Threads::Threads)
+target_link_libraries(lsm PUBLIC m)
 
 # 如果找到 Snappy，则链接它
 if(SNAPPY_FOUND)
