@@ -123,6 +123,9 @@ func (hk *HeavyKeeper) insertInternal(item string) {
 }
 
 func (hk *HeavyKeeper) QueryTopK(ordered bool) []Item {
+	hk.mu.Lock()
+	defer hk.mu.Unlock()
+
 	result := make([]Item, hk.topK.Len())
 	copy(result, *hk.topK)
 
