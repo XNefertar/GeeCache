@@ -96,9 +96,6 @@ func (hk *HeavyKeeper) insertInternal(item string) {
 	if bucket.Fingerprint == fp {
 		bucket.Count++
 	} else {
-		hk.mu.Lock()
-		defer hk.mu.Unlock()
-
 		if rand.Float64() < 1.0/math.Pow(hk.b, float64(bucket.Count)) {
 			bucket.Fingerprint = fp
 			bucket.Count = 1
