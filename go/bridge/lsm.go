@@ -1,7 +1,7 @@
 package bridge
 
 // #cgo CFLAGS: -I../../cpp/lsm/include
-// #cgo LDFLAGS: -L../../cpp/lsm/build -llsm -lstdc++
+// #cgo LDFLAGS: -L../../cpp/lsm/build -llsm -lstdc++ -lm
 // #include "lsm.h"
 // #include <stdlib.h>
 import "C"
