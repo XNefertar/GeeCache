@@ -103,6 +103,11 @@ func (hk *HeavyKeeper) insertInternal(item string) int {
 		bucket.Count++
 	} else {
 		if rand.Float64() < 1.0/math.Pow(hk.b, float64(bucket.Count)) {
+			// Evict old fingerprint from the top-K heap if tracked
+			if oldItem, ok := hk.fingerprintIndexMap[bucket.Fingerprint]; ok {
+				heap.Remove(hk.topK, oldItem.Index)
+				delete(hk.fingerprintIndexMap, bucket.Fingerprint)
+			}
 			bucket.Fingerprint = fp
 			bucket.Count = 1
 		} else {
