@@ -67,19 +67,14 @@ func (hk *HeavyKeeper) CheckAndAdd(item string) bool {
 	hk.mu.Lock()
 	defer hk.mu.Unlock()
 
-	hk.insertInternal(item)
-
-	// Check if cached items count fits in Top K
-	fp := hash(item)
-	idx := fp % uint32(len(hk.buckets))
-	bucket := &hk.buckets[idx]
+	count := hk.insertInternal(item)
 
 	if hk.topK.Len() < hk.k {
 		return true
 	}
 	// Note: (*hk.topK)[0] is the minimum element in the heap (Top K's tail)
 	// If current count >= min count in Top K, it's a hot key.
-	return bucket.Count >= (*hk.topK)[0].Count
+	return count >= (*hk.topK)[0].Count
 }
 
 func (hk *HeavyKeeper) Insert(item string) {
@@ -88,7 +83,7 @@ func (hk *HeavyKeeper) Insert(item string) {
 	hk.insertInternal(item)
 }
 
-func (hk *HeavyKeeper) insertInternal(item string) {
+func (hk *HeavyKeeper) insertInternal(item string) int {
 	fp := hash(item)
 	idx := fp % uint32(len(hk.buckets))
 	bucket := &hk.buckets[idx]
@@ -120,6 +115,11 @@ func (hk *HeavyKeeper) insertInternal(item string) {
 			})
 		}
 	}
+
+	if bucket.Fingerprint == fp {
+		return bucket.Count
+	}
+	return 0
 }
 
 func (hk *HeavyKeeper) QueryTopK(ordered bool) []Item {
