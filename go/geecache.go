@@ -197,8 +197,8 @@ func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption)
 		loader:    &singleflight.Group{},
 		options:   options,
 		ttl:       options.MainCacheTTL,
-		// Init HeavyKeeper: size=10000, topK=100, decay=0.9
-		hotKeyDetector: hotkey.NewHeavyKeeper(10000, 100, 0.9),
+		// Init HeavyKeeper: size=10000, k=100, b=0.9
+		hotKeyDetector: hotkey.NewHeavyKeeper(10000, 100, 1.08),
 	}
 	groups[name] = g
 	// Start periodic cleanup (Redis style)
