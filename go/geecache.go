@@ -346,11 +346,6 @@ func (g *Group) load(ctx context.Context, key string) (value ByteView, err error
 		if g.peers != nil {
 			if peer, ok := g.peers.PickPeer(key); ok {
 				if value, err := g.getFromPeer(ctx, peer, key); err == nil {
-					// Hot Key Protection:
-					// Only populate hotCache if the key is detected as a Top-K hot key by HeavyKeeper
-					if g.hotKeyDetector.CheckAndAdd(key) {
-						g.populateHotCache(key, value)
-					}
 					return value, nil
 				}
 				log.Println("[GeeCache] Failed to get from peer", err)
@@ -361,7 +356,14 @@ func (g *Group) load(ctx context.Context, key string) (value ByteView, err error
 	})
 
 	if err == nil {
-		return viewi.(ByteView), nil
+		v := viewi.(ByteView)
+		// Hot Key Protection:
+		// Count every caller for accurate hot-key detection (moved outside singleflight)
+		// Only populate hotCache if the key is detected as a Top-K hot key by HeavyKeeper
+		if g.hotKeyDetector.CheckAndAdd(key) {
+			g.populateHotCache(key, v)
+		}
+		return v, nil
 	}
 	return
 }
