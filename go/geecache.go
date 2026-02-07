@@ -5,6 +5,7 @@ import (
 	pb "geecache/geecachepb"
 	"geecache/mq"
 	"geecache/observability"
+	"geecache/pkg/hotkey"
 	"geecache/singleflight"
 	"log"
 	"sync"
@@ -70,18 +71,19 @@ func WithHotCacheTTL(ttl time.Duration) GroupOption {
 // Group is a cache namespace and associated data loaded spread over
 // a group of 1 or more nodes.
 type Group struct {
-	name         string
-	getter       Getter
-	setter       Setter
-	mainCache    cache
-	hotCache     cache
-	centralCache CentralCache
-	peers        PeerPicker
-	loader       *singleflight.Group
-	ttl          time.Duration
-	options      *GroupOptions
-	mq           mq.MessageQueue
-	mqTopic      string
+	name           string
+	getter         Getter
+	setter         Setter
+	mainCache      cache
+	hotCache       cache
+	centralCache   CentralCache
+	peers          PeerPicker
+	loader         *singleflight.Group
+	ttl            time.Duration
+	options        *GroupOptions
+	mq             mq.MessageQueue
+	mqTopic        string
+	hotKeyDetector *hotkey.HeavyKeeper
 }
 
 var (
@@ -195,6 +197,8 @@ func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption)
 		loader:    &singleflight.Group{},
 		options:   options,
 		ttl:       options.MainCacheTTL,
+		// Init HeavyKeeper: size=10000, topK=100, decay=0.9
+		hotKeyDetector: hotkey.NewHeavyKeeper(10000, 100, 0.9),
 	}
 	groups[name] = g
 	// Start periodic cleanup (Redis style)
@@ -342,8 +346,11 @@ func (g *Group) load(ctx context.Context, key string) (value ByteView, err error
 		if g.peers != nil {
 			if peer, ok := g.peers.PickPeer(key); ok {
 				if value, err := g.getFromPeer(ctx, peer, key); err == nil {
-					// Hot Key Protection: Cache remote value locally for a short time
-					g.populateHotCache(key, value)
+					// Hot Key Protection:
+					// Only populate hotCache if the key is detected as a Top-K hot key by HeavyKeeper
+					if g.hotKeyDetector.CheckAndAdd(key) {
+						g.populateHotCache(key, value)
+					}
 					return value, nil
 				}
 				log.Println("[GeeCache] Failed to get from peer", err)
