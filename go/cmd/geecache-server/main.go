@@ -31,8 +31,11 @@ func main() {
 	// self 参数主要用于节点间通信时的标识，这里直接用地址
 	peers := geecachehttp.NewHTTPPool(advertiseAddr)
 
-	_, err := geecache.NewGroup(groupName, cacheBytes, nil)
+	group, err := geecache.NewGroup(groupName, cacheBytes, nil)
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err := group.RegisterPeers(peers); err != nil {
 		log.Fatal(err)
 	}
 
