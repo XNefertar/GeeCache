@@ -29,11 +29,14 @@ func main() {
 
 	// 2. 初始化 GeeCache Group
 	// 缓存大小设置大一点，尽量让测试期间能命中
-	geecache.NewGroup("benchmark", 50*1024*1024, geecache.GetterFunc(
+	_, groupErr := geecache.NewGroup("benchmark", 50*1024*1024, geecache.GetterFunc(
 		func(ctx context.Context, key string) ([]byte, error) {
 			log.Printf("[DB] Loading %s...", key)
 			return db.Get(key)
 		}))
+	if groupErr != nil {
+		log.Fatal(groupErr)
+	}
 
 	// 3. 启动 HTTP 服务
 	addr := fmt.Sprintf("localhost:%d", Port)
