@@ -163,9 +163,10 @@ func (g *Group) RunCleanup(interval time.Duration) {
 // cacheBytes: max bytes of the cache.
 // getter: callback to get data from source if cache miss.
 func NewGroup(name string, cacheBytes int64, getter Getter, opts ...GroupOption) (*Group, error) {
-	if getter == nil {
-		return nil, fmt.Errorf("nil Getter")
-	}
+	// Getter is optional for Cache-Aside pattern
+	// if getter == nil {
+	// 	return nil, fmt.Errorf("nil Getter")
+	// }
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -261,7 +262,9 @@ func (g *Group) Set(key string, value []byte, strategy WriteStrategy) error {
 	// Helper to broadcast invalidation
 	broadcast := func() {
 		if g.mq != nil {
-			g.mq.Publish(g.mqTopic, key)
+			if err := g.mq.Publish(g.mqTopic, key); err != nil {
+				log.Printf("[GeeCache] Broadcast failed for key %s: %v", key, err)
+			}
 		}
 	}
 
@@ -392,6 +395,9 @@ func (g *Group) getLocally(ctx context.Context, key string) (ByteView, error) {
 	}
 
 	// 2. Fallback to Source (DB)
+	if g.getter == nil {
+		return ByteView{}, fmt.Errorf("key not found (no getter configured)")
+	}
 	bytes, err := g.getter.Get(ctx, key)
 	if err != nil {
 		return ByteView{}, err
@@ -407,6 +413,29 @@ func (g *Group) getLocally(ctx context.Context, key string) (ByteView, error) {
 
 	g.populateCache(key, value)
 	return value, nil
+}
+
+// DirectSet allows populating the cache manually (Cache-Aside pattern).
+func (g *Group) DirectSet(key string, value []byte) error {
+	if key == "" {
+		return fmt.Errorf("key is required")
+	}
+	if value == nil {
+		return fmt.Errorf("value is required")
+	}
+	// Update L3 (Central Cache)
+	if g.centralCache != nil {
+		g.centralCache.Set(key, value)
+	}
+	g.populateCache(key, ByteView{b: cloneBytes(value)})
+	// Broadcast Invalidation
+	if g.mq != nil {
+		if err := g.mq.Publish(g.mqTopic, key); err != nil {
+			log.Printf("[GeeCache] DirectSet: failed to publish invalidation for key %s: %v", key, err)
+			return err
+		}
+	}
+	return nil
 }
 
 func (g *Group) populateCache(key string, value ByteView) {

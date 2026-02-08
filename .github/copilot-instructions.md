@@ -17,11 +17,11 @@ GeeCache is a hybrid distributed cache system combining a Go-based distributed c
 
 ### 1. Build C++ Storage Engine
 ```bash
-cd storage/lsm
+cd cpp/lsm
 mkdir -p build && cd build
 cmake ..
 make
-# Output: storage/lsm/build/liblsm.a
+# Output: cpp/lsm/build/liblsm.a
 ```
 
 ### 2. Run Go Tests
@@ -39,7 +39,7 @@ go test -v -race ./...
 - **CGO Bridge**:
   - Keep CGO code isolated in `go/bridge/`.
   - `LSMStore` must manage C memory manually (`C.CString`, `C.free`).
-  - Link flags are defined in `go/bridge/lsm.go`: `#cgo LDFLAGS: -L../../storage/lsm/build -llsm -lstdc++`.
+  - Link flags are defined in `go/bridge/lsm.go`: `#cgo LDFLAGS: -L../../cpp/lsm/build -llsm -lstdc++`.
 
 ### C++ (Storage Layer)
 - **Standard**: C++17.
@@ -53,6 +53,6 @@ go test -v -race ./...
 ## Key Files
 - `go/geecache.go`: Main `Group` logic and cache coordination.
 - `go/bridge/lsm.go`: CGO implementation of `CentralCache`.
-- `storage/lsm/include/lsm.h`: Public C API for the storage engine.
-- `storage/lsm/core/db.cc`: Core LSM database logic.
+- `cpp/lsm/include/lsm.h`: Public C API for the storage engine.
+- `cpp/lsm/core/db.cc`: Core LSM database logic.
 - `go/geecachehttp/http.go`: HTTP transport implementation.

@@ -13,7 +13,7 @@ helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh --version 2.6.0
 
 2. Deploy GeeCache:
 ```bash
-kubectl apply -f ../k8s/
+kubectl apply -f ../../deploy/k8s/
 ```
 
 ## Test Scenarios
