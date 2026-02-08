@@ -421,7 +421,15 @@ func (g *Group) DirectSet(key string, value []byte) error {
 	if value == nil {
 		return fmt.Errorf("value is required")
 	}
+	// Update L3 (Central Cache)
+	if g.centralCache != nil {
+		g.centralCache.Set(key, value)
+	}
 	g.populateCache(key, ByteView{b: cloneBytes(value)})
+	// Broadcast Invalidation
+	if g.mq != nil {
+		g.mq.Publish(g.mqTopic, key)
+	}
 	return nil
 }
 
