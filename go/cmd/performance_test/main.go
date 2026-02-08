@@ -6,7 +6,7 @@ import (
 	"geecache"
 	"geecache/pkg/mockdb"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 )
 
@@ -43,9 +43,11 @@ func main() {
 	// 我们生成 1000 个随机 Key，用于接下来的两轮测试
 	// 为了保证这一千个请求是“有且只有 1000 个不同的Key”，我们接下来重放这 1000 个 Key
 	fmt.Printf("3. [Init] 生成 %d 个随机测试请求 Key...\n", TestRequestCount)
+	// Shuffle first TestRequestCount indices to guarantee unique keys
+	indices := rand.Perm(DBSize)[:TestRequestCount]
 	testKeys := make([]string, TestRequestCount)
-	for i := 0; i < TestRequestCount; i++ {
-		testKeys[i] = fmt.Sprintf("key_%d", rand.Intn(DBSize))
+	for i, idx := range indices {
+		testKeys[i] = fmt.Sprintf("key_%d", idx)
 	}
 
 	ctx := context.Background()
