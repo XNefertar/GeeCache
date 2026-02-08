@@ -46,7 +46,7 @@ func NewApp(dsn string) (*App, error) {
 
 	// 2. 初始化缓存组
 	// 核心逻辑：定义 "当缓存未命中时，如何去数据库取数据"
-	app.UserCache, _ = geecache.NewGroup("users", 100*1024*1024, geecache.GetterFunc(
+	userCache, err := geecache.NewGroup("users", 100*1024*1024, geecache.GetterFunc(
 		func(ctx context.Context, key string) ([]byte, error) {
 			// === 缓存回源逻辑 (Cache Miss Logic) ===
 			log.Printf("[GeeCache] Key %s missed, fetching from MySQL...", key)
@@ -61,6 +61,11 @@ func NewApp(dsn string) (*App, error) {
 			return json.Marshal(user)
 		},
 	))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache group: %w", err)
+	}
+	app.UserCache = userCache
 
 	return app, nil
 }
@@ -108,18 +113,27 @@ func (app *App) GetUser(ctx context.Context, userID string) (*User, error) {
 
 func main() {
 	// 初始化
-	app, _ := NewApp("root:password@tcp(127.0.0.1:3306)/mydb")
+	app, appInitErr := NewApp("root:password@tcp(127.0.0.1:3306)/mydb")
+	if appInitErr != nil {
+		log.Fatalf("Failed to initialize app: %v", appInitErr)
+	}
 
 	// 模拟业务调用
 	ctx := context.Background()
 
 	// 第一次调用：因为缓存为空，会触发 "fetch from MySQL"
 	fmt.Println("--- Request 1 ---")
-	u1, _ := app.GetUser(ctx, "1001")
+	u1, getUserErr1 := app.GetUser(ctx, "1001")
+	if getUserErr1 != nil {
+		log.Fatalf("Failed to get user: %v", getUserErr1)
+	}
 	fmt.Printf("Result: %+v\n", u1)
 
 	// 第二次调用：直接命中缓存，不会看到 fetching 日志
 	fmt.Println("\n--- Request 2 ---")
-	u2, _ := app.GetUser(ctx, "1001")
+	u2, getUserErr2 := app.GetUser(ctx, "1001")
+	if getUserErr2 != nil {
+		log.Fatalf("Failed to get user: %v", getUserErr2)
+	}
 	fmt.Printf("Result: %+v\n", u2)
 }
