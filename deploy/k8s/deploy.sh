@@ -54,8 +54,8 @@ build_image() {
     
     # Build C++ library
     print_info "Building C++ LSM storage library..."
-    if [ -d "../../storage/lsm" ]; then
-        cd ../../storage/lsm
+    if [ -d "../../cpp/lsm" ]; then
+        cd ../../cpp/lsm
         mkdir -p build
         cd build
         cmake .. > /dev/null 2>&1 || print_warn "CMake failed, continuing..."

@@ -43,7 +43,7 @@ First, build the GeeCache container image:
 
 ```bash
 # From the repository root
-cd /home/runner/work/GeeCache/GeeCache
+cd /path/to/GeeCache
 
 # Build the image
 docker build -t geecache:latest -f deploy/k8s/Dockerfile .

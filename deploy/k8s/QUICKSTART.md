@@ -39,14 +39,13 @@ kind create cluster --name geecache-demo
 
 ```bash
 # From repository root
-cd /home/runner/work/GeeCache/GeeCache
+cd /path/to/GeeCache
 
-# Build C++ storage library first
-cd storage/lsm
-mkdir -p build && cd build
-cmake ..
-make
-cd ../../..
+# Build C++ storage library first (Optional for Docker build as it's multi-stage, but good for local)
+# The provided Dockerfile handles the C++ build internally.
+# If you are building the image using the provided Dockerfile:
+docker build -t geecache:latest -f deploy/k8s/Dockerfile .
+```
 
 # Build Docker image
 docker build -t geecache:latest -f deploy/k8s/Dockerfile .

@@ -79,7 +79,7 @@ cd GeeCache
 
 2. **Build C++ storage engine**
 ```bash
-cd storage/lsm
+cd cpp/lsm
 mkdir -p build && cd build
 cmake ..
 make
