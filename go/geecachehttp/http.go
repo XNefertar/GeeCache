@@ -74,6 +74,8 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPut {
+		// Limit request body to prevent DoS (e.g., 10MB)
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 		bytes, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
