@@ -16,6 +16,7 @@ func main() {
 
 	flag.IntVar(&port, "port", 9999, "GeeCache server port")
 	flag.StringVar(&groupName, "group", "default", "Cache group name")
+	flag.Int64Var(&cacheBytes, "cacheBytes", 1<<30, "Cache capacity in bytes")
 	flag.Parse()
 
 	// 监听地址 (注意：在容器或云环境中可能需要改为 0.0.0.0)
