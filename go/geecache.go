@@ -262,7 +262,9 @@ func (g *Group) Set(key string, value []byte, strategy WriteStrategy) error {
 	// Helper to broadcast invalidation
 	broadcast := func() {
 		if g.mq != nil {
-			g.mq.Publish(g.mqTopic, key)
+			if err := g.mq.Publish(g.mqTopic, key); err != nil {
+				log.Printf("[GeeCache] Broadcast failed for key %s: %v", key, err)
+			}
 		}
 	}
 
@@ -428,7 +430,10 @@ func (g *Group) DirectSet(key string, value []byte) error {
 	g.populateCache(key, ByteView{b: cloneBytes(value)})
 	// Broadcast Invalidation
 	if g.mq != nil {
-		g.mq.Publish(g.mqTopic, key)
+		if err := g.mq.Publish(g.mqTopic, key); err != nil {
+			log.Printf("[GeeCache] DirectSet: failed to publish invalidation for key %s: %v", key, err)
+			return err
+		}
 	}
 	return nil
 }
