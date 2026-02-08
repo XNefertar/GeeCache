@@ -1,0 +1,114 @@
+#include "token_bucket.h"
+#include <thread>
+
+namespace lsm {
+    TokenBucket::TokenBucket(double capacity, double refill_rate)
+        : _tokens(std::max(capacity, 0.0))
+        , _capacity(std::max(capacity, 0.0))
+        , _refill_rate(std::max(refill_rate, 1.0))  // Enforce minimum rate to avoid division by zero
+        , _last_refill_time(Clock::now()) {}
+
+    // REQUIRES: _mu is locked
+    void TokenBucket::Refill() {
+        auto now = Clock::now();
+        double seconds = std::chrono::duration<double>(now - _last_refill_time).count();
+
+        if (seconds > 0) {
+            double new_tokens = seconds * _refill_rate;
+            _tokens = std::min(_capacity, _tokens + new_tokens);
+            _last_refill_time = now;
+        }
+    }
+
+    void TokenBucket::SetRefillRate(double new_rate) {
+        std::lock_guard<std::mutex> lock(_mu);
+        Refill();
+        _refill_rate = std::max(new_rate, 0.0);
+        // Rate increased? Waiters might be able to proceed earlier.
+        // Rate decreased? Waiters might need to wait longer (handled by re-check).
+        _cv.notify_all();
+    }
+
+    double TokenBucket::GetRefillRate() const {
+        std::lock_guard<std::mutex> lock(_mu);
+        return _refill_rate;
+    }
+
+    void TokenBucket::Request(size_t bytes) {
+        std::unique_lock<std::mutex> lock(_mu);
+        Refill();
+
+        if (_tokens >= bytes) {
+            _tokens -= bytes;
+            return;
+        }
+        if (_refill_rate <= 0) {
+            // Cannot satisfy request if no refill rate
+            return;
+        }
+
+        // 计算需要等待的时间
+        double needed = bytes - _tokens;
+        double wait_seconds = needed / _refill_rate;
+        
+        // 预支令牌 (允许 tokens 变为负数)
+        _tokens -= bytes;
+        
+        lock.unlock(); // 释放锁，允许其他线程进入（虽然它们可能也需要由于负 tokens 而等待更久）
+
+        if (wait_seconds > 0) {
+            // 精准睡眠
+            auto wait_micros = static_cast<int64_t>(wait_seconds * 1000000);
+            std::this_thread::sleep_for(std::chrono::microseconds(wait_micros));
+        }
+    }
+
+    bool TokenBucket::Consume(size_t bytes, int max_wait_ms) {
+        if (bytes == 0) {
+            std::lock_guard<std::mutex> lock(_mu);
+            Refill();
+            return true;
+        }
+
+        auto start_time = Clock::now();
+        auto deadline = start_time + std::chrono::milliseconds(max_wait_ms);
+
+        std::unique_lock<std::mutex> lock(_mu);
+        
+        while (true) {
+            Refill();
+
+            if (_tokens >= bytes) {
+                _tokens -= bytes;
+                return true;
+            }
+
+            // Check absolute timeout
+            auto now = Clock::now();
+            if (now >= deadline) {
+                return false;
+            }
+
+            // Calculate exact time needed to refill enough tokens
+            double needed = bytes - _tokens;
+            if (_refill_rate <= 0) {
+                // Eternal wait -> wait until deadline
+                if (_cv.wait_until(lock, deadline) == std::cv_status::timeout) {
+                    return false;
+                }
+            } else {
+                double needed_sec = needed / _refill_rate;
+                auto wait_duration = std::chrono::duration_cast<Clock::duration>(
+                    std::chrono::duration<double>(needed_sec));
+                
+                auto wake_time = now + wait_duration;
+                if (wake_time > deadline) {
+                    wake_time = deadline;
+                }
+
+                // efficient wait: wakes up on timeout (tokens ready) or signal (rate change)
+                _cv.wait_until(lock, wake_time);
+            }
+        }
+    }
+}

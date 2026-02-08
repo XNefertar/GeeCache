@@ -20,11 +20,20 @@ build/
 *.out
 coverage.txt
 
-# 忽略编译生成的主程序文件名
+# 忽略编译生成的主程序文件名 (Global binaries)
 geecache
 main
 /bin/
 /dist/
+
+# 忽略特定 Go 项目的二进制文件
+# 防止二进制文件名与目录名冲突，建议指定路径
+go/cmd/logviewer/logviewer
+go/cmd/k8s_server/k8s_server
+# 如果 observability_demo 也在 go 目录下，也需要加前缀
+go/cmd/observability_demo
+go/server
+go/bench_main
 
 # --- 2. 依赖目录 (Dependencies) ---
 vendor/
@@ -51,8 +60,6 @@ vendor/
 *.log
 *.prof
 *.pprof
-
-*.log
 test_db/
 data/
 
@@ -67,18 +74,11 @@ flamegraph.pl
 
 # --- 8. 临时文件 (Temporary Files) ---
 *.patch
-go/bench_main
 /tmp/
 
-# --- 9. VS Code Counter 文件(VS Code Counter Files) ---
+# --- 9. VS Code Counter 文件 ---
 .VSCodeCounter/
 
-# Ignore compiled binaries / 忽略编译后的二进制文件
-go/observability_demo
-go/server
-# --- 10. K6 和测试输出 (K6 and Test Output) ---
+# --- 10. K6 和测试输出 ---
 summary.json
 k6_results.json
-
-# --- 11. 存储目录 (Storage Directory) ---
-cpp/lsm/build/
