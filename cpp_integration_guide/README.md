@@ -195,29 +195,39 @@ int main() {
 你需要编译并运行一个独立的 Go 服务供 C++ 调用：
 
 ```go
-package main
-
-import (
+ package main
+ 
+ import (
+    "context"
+    "fmt"
     "geecache"
-    "geecache/geecachegrpc"
+    "geecache/geecachepb"
     "net"
     "log"
     "google.golang.org/grpc"
-)
-
-func main() {
+ )
+ 
+ func main() {
     // 创建一个 Cache Group
     // 在 Sidecar 模式下，Getter 可能设为 nil (完全由客户端控制写入) 
     // 或者实现一个通用的 HTTP 回调去问 C++ 服务 (比较复杂，不推荐)
-    geecache.NewGroup("users", 2<<30, geecache.GetterFunc(
-        func(key string) ([]byte, error) {
-            return nil, fmt.Errorf("key not found in cache")
-        }))
-
-    // 启动 gRPC 服务
-    lis, _ := net.Listen("tcp", ":9999")
-    s := grpc.NewServer()
-    geecachegrpc.NewGroupCacheServer(s) 
-    s.Serve(lis)
-}
+    _, err := geecache.NewGroup("users", 2<<30, geecache.GetterFunc(
+        func(ctx context.Context, key string) ([]byte, error) {
+             return nil, fmt.Errorf("key not found in cache")
+         }))
+    if err != nil {
+        log.Fatal(err)
+    }
+ 
+     // 启动 gRPC 服务
+    lis, err := net.Listen("tcp", ":9999")
+    if err != nil {
+        log.Fatalf("failed to listen: %v", err)
+    }
+     s := grpc.NewServer()
+    // Create a cache server instance and register it
+    cacheServer := &YourCacheServerImpl{} // implement GroupCacheServer interface
+    geecachepb.RegisterGroupCacheServer(s, cacheServer)
+     s.Serve(lis)
+ }
 ```
