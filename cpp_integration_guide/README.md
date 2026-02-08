@@ -23,7 +23,10 @@ GeeCache 的接口定义文件位于：`proto/geecache.proto`。
 
 ```protobuf
 syntax = "proto3";
+
 package geecachepb;
+
+option go_package = "geecache/geecachepb";
 
 message Request {
   string group = 1;
@@ -36,6 +39,7 @@ message Response {
 
 service GroupCache {
   rpc Get(Request) returns (Response);
+  rpc Remove(Request) returns (Response);
 }
 ```
 
