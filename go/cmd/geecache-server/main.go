@@ -24,7 +24,7 @@ func main() {
 	// 监听地址 (注意：在容器或云环境中可能需要改为 0.0.0.0)
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", port)
 	if advertiseAddr == "" {
-		advertiseAddr = fmt.Sprintf("localhost:%d", port)
+		advertiseAddr = fmt.Sprintf("http://localhost:%d", port)
 	}
 
 	// 初始化 HTTP Pool
