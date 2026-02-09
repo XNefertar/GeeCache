@@ -26,6 +26,7 @@ public:
     void Put(const std::string& key, const std::string& value);
     bool Get(const std::string& key, std::string* value);
     void Delete(const std::string& key);
+    void ForceFlush();
 
 private:
     std::string _path;
