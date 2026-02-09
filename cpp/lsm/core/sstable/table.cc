@@ -105,6 +105,32 @@ Table::Status Table::Get(const std::string& key, std::string* value) {
             return entry.key < k;
         });
 
+    // Correction for Internal Key sorting order:
+    // Lookup 'key' has suffix 0x00... (Smallest possible for this UserKey)
+    // Stored keys have suffix ~Seq (likely 0xFF...).
+    // Due to lexicographical compare, if Block EndKey is "key_0_205" and we look for "key_0_2",
+    // "key_0_205" ('2','0') > "key_0_2" ('2', \0) IS TRUE.
+    // So lower_bound returns this block.
+    // HOWEVER, the real Stored "key_0_2" ends with 0xFF.
+    // "key_0_2" (0xFF) > "key_0_205" (0x30).
+    // So "key_0_2" is actually NOT in this block, but in a later block.
+    // We must skip blocks until BlockEndKey >= TargetStoredKey (Max valid suffix).
+    
+    std::string user_key = CodingUtil::ExtractUserKey(key);
+    std::string target_max = CodingUtil::AppendSeq(user_key, 0); // Suffix 0xFF...
+
+    while (it != _index.end() && it->key < target_max) {
+        // Optimization/Fix for Internal Key Sort Order:
+        // If the Index Key is strictly less than TargetMax, it generally means 
+        // the block ends BEFORE our target key's potential position.
+        // HOWEVER, if the User Key matches, it means this block ends with a version of our Key.
+        // Since we are looking for THIS User Key, we MUST stop and check this block.
+        if (CodingUtil::ExtractUserKey(it->key) == user_key) {
+            break;
+        }
+        it++;
+    }
+    
     if (it == _index.end()) {
         return kNotFound;
     }
@@ -134,37 +160,35 @@ Table::Status Table::Get(const std::string& key, std::string* value) {
         std::string_view current_key(data, klen);
         
         if (current_key >= key) {
-             std::string curr_str(current_key);
-             if (CodingUtil::ExtractUserKey(curr_str) == CodingUtil::ExtractUserKey(key)) {
-                
-                // FOUND Matching User Key.
-                // Since data is sorted by Internal Key (Desc Seq), the first one we see is the valid one.
-                
-                // Check bounds for Value
-                const char* v_ptr = data + klen;
-                if (v_ptr + sizeof(uint32_t) > end) {
-                    std::cerr << "[Error] Block Corruption: Value length header out of bounds" << std::endl;
+            std::string curr_str(current_key);
+            if (CodingUtil::ExtractUserKey(curr_str) == CodingUtil::ExtractUserKey(key)) {
+               
+               // FOUND Matching User Key.
+               // Since data is sorted by Internal Key (Desc Seq), the first one we see is the valid one.
+               
+               // Check bounds for Value
+               const char* v_ptr = data + klen;
+               if (v_ptr + sizeof(uint32_t) > end) {
+                   std::cerr << "[Error] Block Corruption: Value length header out of bounds" << std::endl;
+                   return kNotFound;
+               }
+
+               uint32_t vlen;
+               memcpy(&vlen, v_ptr, sizeof(vlen));
+               v_ptr += sizeof(vlen);
+               
+               if (v_ptr + vlen + 1 > end) { // +1 for type
+                    std::cerr << "[Error] Block Corruption: Value/Type out of bounds" << std::endl;
                     return kNotFound;
-                }
+               }
 
-                uint32_t vlen;
-                memcpy(&vlen, v_ptr, sizeof(vlen));
-                v_ptr += sizeof(vlen);
-                
-                if (v_ptr + vlen + 1 > end) { // +1 for type
-                     std::cerr << "[Error] Block Corruption: Value/Type out of bounds" << std::endl;
-                     return kNotFound;
-                }
-
-                *value = std::string(v_ptr, vlen);
-                uint8_t type;
-                memcpy(&type, v_ptr + vlen, sizeof(type));
-                
-                if (type == 1) return kDeleted;
-                return kFound;
-             } else {
-                 return kNotFound;
-             }
+               *value = std::string(v_ptr, vlen);
+               uint8_t type;
+               memcpy(&type, v_ptr + vlen, sizeof(type));
+               
+               if (type == 1) return kDeleted;
+               return kFound;
+            }
         }
         
         // Skip current entry to move to next

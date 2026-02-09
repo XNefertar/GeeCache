@@ -91,9 +91,7 @@ void DB::Put(const std::string& key, const std::string& value) {
 
 bool DB::Get(const std::string& key, std::string* value) {
     std::lock_guard<std::mutex> lock(_mutex);
-    
     std::string lookup_key = CodingUtil::AppendSeq(key, UINT64_MAX);
-
     // Check MemTable
     {
         std::unique_ptr<SkipList::Iterator> iter(_memtable->NewIterator());
@@ -101,15 +99,14 @@ bool DB::Get(const std::string& key, std::string* value) {
         if (iter->Valid()) {
             std::string internal_key = iter->Key();
             if (CodingUtil::ExtractUserKey(internal_key) == key) {
-                 if (iter->IsDeleted()) {
-                     return false;
-                 }
-                 *value = iter->Value();
-                 return true;
+                if (iter->IsDeleted()) {
+                    return false;
+                }
+                *value = iter->Value();
+                return true;
             }
         }
     }
-
     // Check SSTables via Version
     Table::Status result = _versions->current()->Get(lookup_key, value);
     if (result == Table::kFound) {
@@ -136,6 +133,11 @@ void DB::Delete(const std::string& key) {
         _wal->Sync();
     }
     _memtable->Delete(internal_key);
+}
+
+void DB::ForceFlush() {
+    std::lock_guard<std::mutex> lock(_mutex);
+    Flush();
 }
 
 void DB::Flush() {
