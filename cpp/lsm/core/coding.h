@@ -18,6 +18,9 @@ class CodingUtil {
 public:
     static std::string AppendSeq(const std::string& user_key, uint64_t seq) {
         std::string res = user_key;
+        // Separator to ensure "key_0_1" < "key_0_10" in byte comparison.
+        // '\0' is less than any ASCII char, so "key_0_1\0..." < "key_0_10\0..."
+        res.push_back('\0'); 
         uint64_t s = ~seq; // Invert for descending order
         uint64_t be = __builtin_bswap64(s);
         res.append(reinterpret_cast<char*>(&be), sizeof(be));
@@ -25,12 +28,12 @@ public:
     }
 
     static std::string ExtractUserKey(const std::string& internal_key) {
-        if (internal_key.size() < 8) return internal_key;
-        return internal_key.substr(0, internal_key.size() - 8);
+        if (internal_key.size() < 9) return internal_key;
+        return internal_key.substr(0, internal_key.size() - 9);
     }
     
     static uint64_t ExtractSeq(const std::string& internal_key) {
-        if (internal_key.size() < 8) return 0;
+        if (internal_key.size() < 9) return 0;
         uint64_t be;
         memcpy(&be, internal_key.data() + internal_key.size() - 8, 8);
         return ~(__builtin_bswap64(be));
