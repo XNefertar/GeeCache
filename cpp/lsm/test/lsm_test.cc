@@ -84,6 +84,9 @@ void TestConcurrencyCorrectness() {
     }
 
     for (auto& t : threads) t.join();
+    // 强制刷盘
+    // 解决数据再 "Immutable MemTable" 期间对 Get 不可见的一致性问题
+    db.ForceFlush();
 
     // Verify
     for (int i = 0; i < num_threads; ++i) {

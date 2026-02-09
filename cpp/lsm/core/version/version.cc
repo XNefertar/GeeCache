@@ -90,8 +90,8 @@ Table::Status Version::Get(const std::string& key, std::string* value) const {
             if (in_range(key, f)) {
                 std::shared_ptr<Table> table = GetTable(f->number);
                 if (table) {
-                     Table::Status status = table->Get(key, value);
-                     if (status != Table::kNotFound) return status;
+                    Table::Status status = table->Get(key, value);
+                    if (status != Table::kNotFound) return status;
                 }
             }
         }
@@ -123,6 +123,18 @@ Table::Status Version::Get(const std::string& key, std::string* value) const {
             }
         }
     }
+
+    // for (auto it = _files[0].rbegin(); it != _files[0].rend(); ++it) {
+    //     if (in_range(key, &(*it))) {
+    //         std::shared_ptr<Table> table = GetTable(it->number);
+    //         if (table) {
+    //             Table::Status status = table->Get(key, value);
+    //             if (status != Table::kNotFound) {
+    //                 return status;
+    //             }
+    //         }
+    //     }
+    // }
     
     for (int level = 1; level < 7; ++level) {
         const auto& files = _files[level];
