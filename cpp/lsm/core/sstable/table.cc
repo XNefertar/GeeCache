@@ -159,43 +159,36 @@ Table::Status Table::Get(const std::string& key, std::string* value) {
         }
         std::string_view current_key(data, klen);
         
-        // For Sequence Number support: Find first key with matching User Key
-        // Note: Due to InternalKey encoding (UserKey + BigEndian(~Seq)), 
-        // keys that are prefixes of others (e.g., "key_1" vs "key_10") sorts differently 
-        // than expected ("key_1" > "key_10" because suffix 0xFF > '0').
-        // Therefore, we cannot rely on (current_key > key) to abort early.
-        // We must scan the potentially relevant range or the whole block.
-        
-        if (current_key.size() >= 8) {
-             std::string curr_str(current_key);
-             if (CodingUtil::ExtractUserKey(curr_str) == CodingUtil::ExtractUserKey(key)) {
-                
-                // FOUND Matching User Key.
-                // Since data is sorted by Internal Key (Desc Seq), the first one we see is the valid one.
-                
-                // Check bounds for Value
-                const char* v_ptr = data + klen;
-                if (v_ptr + sizeof(uint32_t) > end) {
-                    std::cerr << "[Error] Block Corruption: Value length header out of bounds" << std::endl;
+        if (current_key >= key) {
+            std::string curr_str(current_key);
+            if (CodingUtil::ExtractUserKey(curr_str) == CodingUtil::ExtractUserKey(key)) {
+               
+               // FOUND Matching User Key.
+               // Since data is sorted by Internal Key (Desc Seq), the first one we see is the valid one.
+               
+               // Check bounds for Value
+               const char* v_ptr = data + klen;
+               if (v_ptr + sizeof(uint32_t) > end) {
+                   std::cerr << "[Error] Block Corruption: Value length header out of bounds" << std::endl;
+                   return kNotFound;
+               }
+
+               uint32_t vlen;
+               memcpy(&vlen, v_ptr, sizeof(vlen));
+               v_ptr += sizeof(vlen);
+               
+               if (v_ptr + vlen + 1 > end) { // +1 for type
+                    std::cerr << "[Error] Block Corruption: Value/Type out of bounds" << std::endl;
                     return kNotFound;
-                }
+               }
 
-                uint32_t vlen;
-                memcpy(&vlen, v_ptr, sizeof(vlen));
-                v_ptr += sizeof(vlen);
-                
-                if (v_ptr + vlen + 1 > end) { // +1 for type
-                     std::cerr << "[Error] Block Corruption: Value/Type out of bounds" << std::endl;
-                     return kNotFound;
-                }
-
-                *value = std::string(v_ptr, vlen);
-                uint8_t type;
-                memcpy(&type, v_ptr + vlen, sizeof(type));
-                
-                if (type == 1) return kDeleted;
-                return kFound;
-             }
+               *value = std::string(v_ptr, vlen);
+               uint8_t type;
+               memcpy(&type, v_ptr + vlen, sizeof(type));
+               
+               if (type == 1) return kDeleted;
+               return kFound;
+            }
         }
         
         // Skip current entry to move to next

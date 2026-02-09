@@ -410,6 +410,7 @@ void DB::BackgroundCompaction() {
             meta.largest = largest;
             
             new_ver->AddFile(c->level + 1, meta);
+            new_ver->SortLevel(c->level + 1);
             new_ver->SortL0();
             
             _versions->LogAndApply(new_ver);

@@ -31,6 +31,7 @@ public:
     std::vector<FileMetaData> GetFiles(int level) const;
     
     void SortL0();
+    void SortLevel(int level);
 
     // Compaction State
     double _compaction_score = -1;

@@ -64,6 +64,17 @@ void Version::SortL0() {
     }
 }
 
+void Version::SortLevel(int level) {
+    if (level == 0) {
+        SortL0();
+        return;
+    }
+    if (level < 0 || level >= 7) return;
+    std::sort(_files[level].begin(), _files[level].end(), [](const FileMetaData& a, const FileMetaData& b) {
+        return a.smallest < b.smallest;
+    });
+}
+
 std::shared_ptr<Table> Version::GetTable(int file_number) const {
     if (_table_cache) {
         return _table_cache->FindTable(file_number);
